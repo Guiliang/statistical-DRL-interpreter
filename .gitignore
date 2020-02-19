@@ -1,1 +1,5 @@
-# Created by .ignore support plugin (hsz.mobi)
+# Created by .ignore utils plugin (hsz.mobi)
+.idea/misc.xml
+.idea/modules.xml
+.idea/statistical-DRL-interpreter.iml
+.idea/workspace.xml
