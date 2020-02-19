@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import random
 import pygame
-import flappy_bird_utils
+import data_generator.fb_game.flappy_bird_utils as flappy_bird_utils
 import pygame.surfarray as surfarray
 from pygame.locals import *
 from itertools import cycle

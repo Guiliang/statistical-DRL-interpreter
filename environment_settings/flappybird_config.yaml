@@ -1,0 +1,12 @@
+Learn:
+  game: 'bird'  # the name of the game being played for log files
+  actions: 2  # number of valid actions
+  gamma: 0.99  # decay rate of past observations
+  observe: 100000.  # timesteps to observe before training
+  explore: 2000000.  # frames over which to anneal epsilon
+  final_epsilon: 0.0001  # final value of epsilon
+  initial_epsilon: 0.0001  # starting value of epsilon
+  replay_memory: 50000  # number of previous transitions to remember
+  batch: 32  # size of minibatch
+  frame_per_action: 1
+  learning_rate: 1e-6
