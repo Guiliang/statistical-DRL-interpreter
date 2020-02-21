@@ -7,11 +7,13 @@ from collections import deque
 import numpy as np
 from tqdm import tqdm
 import torchvision as tv
+import torchvision.transforms.functional as tf
 import torch
 import torch.optim as optim
-from config.flappy_bird_config import FlappyBirdCongfig
 from utils.general_utils import mkdirs
-from utils.model_utils import square_loss
+from utils.model_utils import square_loss, handle_image_input
+from PIL import Image
+import matplotlib.pyplot as plt
 
 
 class DRLDataGenerator():
@@ -19,20 +21,26 @@ class DRLDataGenerator():
 
         self.global_iter = 0
         self.config = config
-        use_cuda = config.Learn.cuda and torch.cuda.is_available()
+        use_cuda = config.DRL.Learn.cuda and torch.cuda.is_available()
         self.device = 'cuda' if use_cuda else 'cpu'
-        self.ckpt_dir = os.path.join(self.config.Learn.ckpt_dir, self.config.Learn.name)
-        self.ckpt_save_iter = self.config.Learn.ckpt_save_iter
-        self.pbar = tqdm(total=self.config.Learn.max_iter)
+        self.ckpt_dir = self.config.DRL.Learn.ckpt_dir
+        self.ckpt_save_iter = self.config.DRL.Learn.ckpt_save_iter
+        self.pbar = tqdm(total=self.config.DRL.Learn.max_iter)
         mkdirs(self.ckpt_dir)
 
-        if config.Learn.ckpt_load:
-            self.load_checkpoint(self.config.Learn.ckpt_load)
-        if game_name == 'flappy-bird':
-            self.actions_number = self.config.Learn.actions
+        if config.DRL.Learn.ckpt_load:
+            self.load_checkpoint()
+        if game_name == 'flappybird':
+            self.actions_number = self.config.DRL.Learn.actions
             self.nn = nn_fb.FlappyBirdDRLNN(config=self.config).to(self.device)
-            self.optim = optim.Adam(self.nn.parameters(), lr=self.config.Learn.learning_rate,
-                                    betas=(self.config.Learn.beta1_D, self.config.Learn.beta2_D)).to(self.device)
+            self.optim = optim.Adam(self.nn.parameters(), lr=self.config.DRL.Learn.learning_rate,
+                                    betas=(self.config.DRL.Learn.beta1_D, self.config.DRL.Learn.beta2_D))
+
+        # self.trainTransform = tv.transforms.Compose([tv.transforms.Resize(size=(80, 80)),
+        #                                              tv.transforms.Grayscale(num_output_channels=1),
+        #                                              tv.transforms.ToTensor(),
+        #                                              # tv.transforms.Normalize()
+        #                                              ])
 
     def save_checkpoint(self, ckptname='last', verbose=True):
         model_states = {'DRLNN': self.nn.state_dict()}
@@ -86,65 +94,56 @@ class DRLDataGenerator():
         do_nothing = np.zeros(self.actions_number)
         do_nothing[0] = 1
         x_t0_colored, r_0, terminal = game_state.frame_step(do_nothing)
-
-        trainTransform = tv.transforms.Compose([tv.transforms.Resize(size=(80, 80)),
-                                                tv.transforms.Grayscale(num_output_channels=1),
-                                                tv.transforms.ToTensor(),
-                                                # tv.transforms.Normalize()
-                                                ])
-
-        x_t = trainTransform(x_t0_colored)
-        # Apply threshold
-        data = x_t > 128  # mean value
-        data = data.float()
-
-        s_t = np.stack((x_t, x_t, x_t, x_t), axis=2).to(self.device)
+        x_t = handle_image_input(img_colored=x_t0_colored)
+        s_t = torch.stack(tensors=[x_t], dim=0).to(self.device)
 
         # start training
-        epsilon = self.config.Learn.initial_epsilon
+        epsilon = self.config.DRL.Learn.initial_epsilon
         t = 0
         while "flappy bird" != "angry bird":
             # choose an action epsilon greedily
             # readout_t = readout.eval(feed_dict={s: [s_t]})[0]
-            readout_t = self.nn(s_t)
-            a_t = np.zeros([self.config.Learn.actions])
-            action_index = 0
-            if t % self.config.Learn.frame_per_action == 0:
+            # self.nn = self.nn.eval()
+            with torch.no_grad():
+                readout_t = self.nn(s_t.unsqueeze(0))
+            readout_t = readout_t.cpu().numpy()
+            a_t = np.zeros([self.config.DRL.Learn.actions])
+            if t % self.config.DRL.Learn.frame_per_action == 0:
                 if random.random() <= epsilon:
                     print("----------Random Action----------")
-                    action_index = random.randrange(self.config.Learn.actions)
-                    a_t[random.randrange(self.config.Learn.actions)] = 1
+                    action_index = random.randrange(self.config.DRL.Learn.actions)
+                    a_t[action_index] = 1
                 else:
+                    # values, indices = torch.max(readout_t, 1)
                     action_index = np.argmax(readout_t)
                     a_t[action_index] = 1
+                # print('action is {0}'.format(str(a_t)))
             else:
                 a_t[0] = 1  # do nothing
 
             # scale down epsilon
-            if epsilon > self.config.Learn.final_epsilon and t > self.config.Learn.observe:
-                epsilon -= (self.config.Learn.initial_epsilon - self.config.Learn.final_epsilon) / self.config.Learn.explore
-
+            if epsilon > self.config.DRL.Learn.final_epsilon and t > self.config.DRL.Learn.observe:
+                epsilon -= (self.config.DRL.Learn.initial_epsilon - self.config.DRL.Learn.final_epsilon) / self.config.DRL.Learn.explore
             x_t1_colored, r_t, terminal = game_state.frame_step(a_t)
-            x_t1 = trainTransform(x_t1_colored)
-            x_t1 = np.reshape(x_t1, (80, 80, 1))
-            # s_t1 = np.append(x_t1, s_t[:,:,1:], axis = 2)
-            s_t1 = np.append(x_t1, s_t[:, :, 1:], axis=2).to(self.device)
+            x_t1 = handle_image_input(img_colored=x_t1_colored)
+            s_t1 = torch.stack(tensors=[x_t1], dim=0).to(self.device)
 
             # store the transition in D
-            D.append((s_t, a_t, r_t, s_t1, terminal))
-            if len(D) > self.config.Learn.replay_memory:
+            D.append((s_t, torch.tensor(a_t,  dtype=torch.float32),
+                      torch.tensor([r_t], dtype=torch.float32), s_t1, terminal))
+            if len(D) > self.config.DRL.Learn.replay_memory:
                 D.popleft()
 
             # only train if done observing
-            if t > self.config.Learn.observe:
+            if t > self.config.DRL.Learn.observe:
                 # sample a minibatch to train on
-                minibatch = random.sample(D, self.config.Learn.batch)
+                minibatch = random.sample(D, self.config.DRL.Learn.batch)
 
                 # get the batch variables
-                s_t_batch = [d[0] for d in minibatch]
-                a_batch = [d[1] for d in minibatch]
-                r_batch = [d[2] for d in minibatch]
-                s_t1_batch = [d[3] for d in minibatch]
+                s_t_batch = torch.stack([d[0] for d in minibatch]).to(self.device)
+                a_batch = torch.stack([d[1] for d in minibatch]).to(self.device)
+                r_batch = torch.stack([d[2] for d in minibatch]).to(self.device)
+                s_t1_batch = torch.stack([d[3] for d in minibatch]).to(self.device)
 
                 y_batch = []
                 # readout_j1_batch = readout.eval(feed_dict={s: s_j1_batch})
@@ -156,10 +155,11 @@ class DRLDataGenerator():
                     if terminal:
                         y_batch.append(r_batch[i])
                     else:
-                        y_batch.append(r_batch[i] + self.config.Learn.gamma * np.max(readout_t1_batch[i]))
+                        max_readout_t1_batch = torch.max(readout_t1_batch[i], dim=0)[0]
+                        y_batch.append(r_batch[i] + max_readout_t1_batch)
 
-                readout_action = np.sum(np.matmul(a=readout_t0_batch, b=a_batch), axis=1)
-                DRL_loss = square_loss(x=readout_action, y=y_batch)
+                readout_action = torch.sum(torch.mul(readout_t0_batch, a_batch), dim=1)
+                DRL_loss = square_loss(x=readout_action, y=torch.stack(y_batch))
                 self.optim.zero_grad()
                 DRL_loss.backward(retain_graph=True)
                 self.optim.step()
@@ -169,25 +169,18 @@ class DRLDataGenerator():
             t += 1
 
             # save progress every 10000 iterations
-            if self.global_iter % self.ckpt_save_iter == 0:
-                print('Saving VAE models')
-                self.save_checkpoint('DRL-' + str(self.global_iter), verbose=True)
+            # if self.global_iter % self.ckpt_save_iter == 0:
+            #     print('Saving VAE models')
+            #     self.save_checkpoint('DRL-' + str(self.global_iter), verbose=True)
 
             # print info
             state = ""
-            if t <= self.config.Learn.observe:
+            if t <= self.config.DRL.Learn.observe:
                 state = "observe"
-            elif self.config.Learn.observe < t <= self.config.Learn.observe + self.config.Learn.explore:
+            elif self.config.DRL.Learn.observe < t <= self.config.DRL.Learn.observe + self.config.DRL.Learn.explore:
                 state = "explore"
             else:
                 state = "train"
 
             print("TIMESTEP", t, "/ STATE", state, "/ EPSILON", epsilon, "/ ACTION", action_index, "/ REWARD", r_t,
                   "/ Q_MAX %e" % np.max(readout_t))
-
-
-def run():
-    flappybird_config_path = "/Local-Scratch/PycharmProjects/" \
-                             "statistical-DRL-interpreter/environment_settings/" \
-                             "flappybird_config.yaml"
-    icehockey_cvrnn_config = FlappyBirdCongfig.load(flappybird_config_path)

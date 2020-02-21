@@ -10,5 +10,5 @@ class InitWithDict(object):
         """
 
         if init:
-            for key, value in init.iteritems():
+            for key, value in init.items():
                 setattr(self, key, value)

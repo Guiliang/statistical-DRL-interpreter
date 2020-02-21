@@ -1,12 +1,20 @@
-Learn:
-  game: 'bird'  # the name of the game being played for log files
-  actions: 2  # number of valid actions
-  gamma: 0.99  # decay rate of past observations
-  observe: 100000.  # timesteps to observe before training
-  explore: 2000000.  # frames over which to anneal epsilon
-  final_epsilon: 0.0001  # final value of epsilon
-  initial_epsilon: 0.0001  # starting value of epsilon
-  replay_memory: 50000  # number of previous transitions to remember
-  batch: 32  # size of minibatch
-  frame_per_action: 1
-  learning_rate: 1e-6
+DRL:
+  Learn:
+    actions: 2  # number of valid actions
+    gamma: 0.99  # decay rate of past observations
+    observe: 10000.  # timesteps to observe before training
+    explore: 2000000.  # frames over which to anneal epsilon
+    final_epsilon: 0.0001  # final value of epsilon
+    initial_epsilon: 0.9  # starting value of epsilon
+    replay_memory: 50000  # number of previous transitions to remember
+    batch: 32  # size of minibatch
+    frame_per_action: 6
+    learning_rate: 0.000001
+    cuda: True
+    ckpt_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DRL/flappybird/'
+    ckpt_save_iter: 100
+    max_iter: 10000
+    ckpt_load: True
+    beta1_D: 0.5
+    beta2_D: 0.9
+    input_image_size: 80
