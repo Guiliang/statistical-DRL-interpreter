@@ -2,8 +2,12 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
-import torchvision.transforms.functional as tf
+import torchvision.transforms.functional as ttf
+import torchvision.utils as tu
 import math
+import numpy as np
+import cv2
+
 
 def recon_loss(x, x_recon):
     n = x.size(0)
@@ -30,7 +34,7 @@ def permute_dims(z):
 
 
 def square_loss(x, y):
-    return ((x - y) ** 2).sum(1).mean()
+    return ((x - y) ** 2).mean()
 
 
 def get_same_padding(size, kernel_size, stride, dilation):
@@ -40,30 +44,44 @@ def get_same_padding(size, kernel_size, stride, dilation):
 
 
 def calculate_conv_output_dimension(size, kernel_size, stride, dilation, padding):
-    return math.floor((size+2*padding-dilation*(kernel_size-1)-1)/stride+1)
+    return math.floor((size + 2 * padding - dilation * (kernel_size - 1) - 1) / stride + 1)
+
+
+# def handle_image_input(image, width=84, height=84):
+#     image = cv2.cvtColor(cv2.resize(image, (width, height)), cv2.COLOR_BGR2GRAY)
+#     _, image = cv2.threshold(image, 1, 255, cv2.THRESH_BINARY)
+#     cv2.imshow('image', image)
+#     cv2.waitKey(0)
+#     # return image[None, :, :].astype(np.float32)
+#     return torch.from_numpy(image[None, :, :].astype(np.float32))
 
 
 def handle_image_input(img_colored,
                        if_print_img=False,
-                       if_binarize=False):
+                       if_binarize=True,
+                       save_image_path=None,
+                       iter=None):
     img_colored = Image.fromarray(img_colored)
-    img_colored = tf.resize(img_colored, size=(80, 80))
-    img_colored = tf.rotate(img_colored, angle=270)
-    img_colored = tf.hflip(img_colored)
-    img_gray = tf.to_grayscale(img_colored, num_output_channels=1)
+    img_colored = ttf.resize(img_colored, size=(84, 84))
+    # img_colored = ttf.rotate(img_colored, angle=270)
+    # img_colored = ttf.hflip(img_colored)
+    img_gray = ttf.to_grayscale(img_colored, num_output_channels=1)
     # Image._show(img_gray)
-    x_t = tf.to_tensor(img_gray)
+    x_t = ttf.to_tensor(img_gray)
 
-    if if_print_img:
-        x_t_image = x_t.numpy()
-        # x_t_image = tv.transforms.ToPILImage(x_t)
-        plt.imshow(x_t_image[0])
+    if save_image_path is not None:
+        tu.save_image(x_t, open(save_image_path + '-' + str(iter) + '.png', 'wb'))
 
     # Apply threshold
     max_value = torch.max(x_t)
     min_value = torch.min(x_t)
     if if_binarize:
-        x_t = x_t > (max_value - min_value) / 2  # mean value
+        # x_t = x_t > (max_value - min_value) / 2  # mean value
+        x_t = x_t > min_value
+        x_t = x_t*255
         x_t = x_t.float()
-
-    return torch.squeeze(x_t)
+    if if_print_img:
+        x_t_image = x_t.numpy()
+        plt.figure()
+        plt.imshow(x_t_image[0])
+    return x_t

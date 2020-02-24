@@ -2,19 +2,43 @@ DRL:
   Learn:
     actions: 2  # number of valid actions
     gamma: 0.99  # decay rate of past observations
-    observe: 10000.  # timesteps to observe before training
+    observe: 100 #10000.  # timesteps to observe before training
     explore: 2000000.  # frames over which to anneal epsilon
     final_epsilon: 0.0001  # final value of epsilon
     initial_epsilon: 0.9  # starting value of epsilon
-    replay_memory: 50000  # number of previous transitions to remember
+    replay_memory_size: 50000  # number of previous transitions to remember
     batch: 32  # size of minibatch
-    frame_per_action: 6
+    frame_per_action: 5
     learning_rate: 0.000001
     cuda: True
     ckpt_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DRL/flappybird/'
     ckpt_save_iter: 100
     max_iter: 10000
     ckpt_load: True
-    beta1_D: 0.5
-    beta2_D: 0.9
+    gmma: 0.99
+#    beta1_D: 0.5
+#    beta2_D: 0.9
     input_image_size: 80
+    image_save_path: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/flappybird/'
+
+DEG:
+  FVAE:
+    name : 'flappybird'  # 'main'
+    cuda : True
+    max_iter: 1000000
+    batch_size: 32
+    z_dim: 10  # 'dimension of the representation z'
+    gamma: 6.4
+    lr_VAE: 0.0001
+    beta1_VAE : 0.9
+    beta2_VAE : 0.999
+    lr_D : 0.0001
+    beta1_D : 0.5
+    beta2_D : 0.9
+    dset_dir : ''
+    image_size : 80
+    num_workers : 2
+    print_iter : 500
+    ckpt_dir : '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DEG/flappybird/'
+    ckpt_save_iter: 10000
+    output_save: True
