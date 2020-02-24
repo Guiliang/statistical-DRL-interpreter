@@ -3,3 +3,4 @@
 .idea/modules.xml
 .idea/statistical-DRL-interpreter.iml
 .idea/workspace.xml
+*.pyc
