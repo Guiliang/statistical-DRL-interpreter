@@ -1,6 +1,7 @@
 import os
 import argparse
 import subprocess
+
 """dataset.py"""
 
 import os
@@ -57,35 +58,34 @@ class CustomTensorDataset(Dataset):
         return self.data_tensor.size(0)
 
 
-def return_data(args):
-    name = args.dataset
-    dset_dir = args.dset_dir
-    batch_size = args.batch_size
-    num_workers = args.num_workers
-    image_size = args.image_size
-    assert image_size == 64, 'currently only image size of 64 is supported'
-
+def return_data(config):
+    name = config.name
+    dset_dir = config.dset_dir
+    batch_size = config.batch_size
+    num_workers = config.num_workers
+    image_length = config.image_length
+    image_width = config.image_width
+    # assert image_size == 64, 'currently only image size of 64 is supported'
     transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),])
+        transforms.Resize((image_length, image_width)),
+        transforms.ToTensor(), ])
 
-    if name.lower() == 'celeba':
-        root = os.path.join(dset_dir, 'CelebA')
-        train_kwargs = {'root':root, 'transform':transform}
+    if name.lower() == 'flappybird':
+        root = os.path.join(dset_dir, 'flappybird/'+config.image_type)  # TODO: you might want to try colored?
+        train_kwargs = {'root': root, 'transform': transform}
         dset = CustomImageFolder
-    elif name.lower() == '3dchairs':
-        root = os.path.join(dset_dir, '3DChairs')
-        train_kwargs = {'root':root, 'transform':transform}
-        dset = CustomImageFolder
-    elif name.lower() == 'dsprites':
-        root = os.path.join(dset_dir, 'dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-        data = np.load(root, encoding='latin1')
-        data = torch.from_numpy(data['imgs']).unsqueeze(1).float()
-        train_kwargs = {'data_tensor':data}
-        dset = CustomTensorDataset
+    # elif name.lower() == '3dchairs':
+    #     root = os.path.join(dset_dir, '3DChairs')
+    #     train_kwargs = {'root':root, 'transform':transform}
+    #     dset = CustomImageFolder
+    # elif name.lower() == 'dsprites':
+    #     root = os.path.join(dset_dir, 'dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    #     data = np.load(root, encoding='latin1')
+    #     data = torch.from_numpy(data['imgs']).unsqueeze(1).float()
+    #     train_kwargs = {'data_tensor':data}
+    #     dset = CustomTensorDataset
     else:
         raise NotImplementedError
-
 
     train_data = dset(**train_kwargs)
     train_loader = DataLoader(train_data,

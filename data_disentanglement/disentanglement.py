@@ -17,7 +17,7 @@ from data_disentanglement.nn_deg.fvae_model import FactorVAE1, FactorVAE2, Discr
 class Disentanglement(object):
     def __init__(self, config):
         # Misc
-        use_cuda = config.cuda and torch.cuda.is_available()
+        use_cuda = torch.cuda.is_available()
         self.device = 'cuda' if use_cuda else 'cpu'
         self.name = config.DEG.FVAE.name
         self.max_iter = config.DEG.FVAE.max_iter
@@ -27,7 +27,7 @@ class Disentanglement(object):
 
         # Data
         self.batch_size = config.DEG.FVAE.batch_size
-        self.data_loader = return_data(config)
+        self.data_loader = return_data(config.DEG.FVAE)
 
         # Networks & Optimizers
         self.z_dim = config.DEG.FVAE.z_dim
@@ -53,17 +53,20 @@ class Disentanglement(object):
         self.nets = [self.VAE, self.D]
 
         # Checkpoint
-        self.ckpt_dir = os.path.join(config.DEG.FVAE.ckpt_dir, config.DEG.FVAE.name)
+        self.ckpt_dir = os.path.join(config.DEG.FVAE.ckpt_dir, 'saved_model')
         self.ckpt_save_iter = config.DEG.FVAE.ckpt_save_iter
         mkdirs(self.ckpt_dir)
-        if config.DEG.FVAE.ckpt_load:
-            self.load_checkpoint(config.DEG.FVAE.ckpt_load)
+        # if config.DEG.FVAE.ckpt_load:
+        #     self.load_checkpoint(config.DEG.FVAE.ckpt_load)
 
         # Output(latent traverse GIF)
-        self.output_dir = os.path.join(config.DEG.FVAE.output_dir, config.name)
+        self.output_dir = os.path.join(config.DEG.FVAE.output_dir, 'output')
         self.output_save = config.DEG.FVAE.output_save
+        self.viz_ta_iter = config.DEG.FVAE.viz_ta_iter
         mkdirs(self.output_dir)
 
+        self.image_length = config.DEG.FVAE.image_length
+        self.image_width = config.DEG.FVAE.image_width
 
     def train(self):
         self.net_mode(train=True)
@@ -75,7 +78,6 @@ class Disentanglement(object):
         while not out:
             for x_true1, x_true2 in self.data_loader:
                 self.pbar.update(1)
-
                 x_true1 = x_true1.to(self.device)
                 x_recon, mu, logvar, z = self.VAE(x_true1)
                 vae_recon_loss = recon_loss(x_true1, x_recon)
@@ -106,12 +108,10 @@ class Disentanglement(object):
                             self.global_iter, vae_recon_loss.item(), vae_kld.item(), vae_tc_loss.item(),
                             D_tc_loss.item()))
 
-
-                if self.viz_on and (self.global_iter % self.viz_ta_iter == 0):
-                    if self.dataset.lower() == '3dchairs':
-                        self.visualize_traverse(limit=2, inter=0.5)
-                    else:
-                        self.visualize_traverse(limit=3, inter=2 / 3)
+                if self.global_iter % self.viz_ta_iter == 0:
+                    self.visualize_traverse(image_length=self.image_length,
+                                            image_width=self.image_width,
+                                            limit=3, inter=2 / 3)
 
                 if self.global_iter >= self.max_iter:
                     out = True
@@ -121,8 +121,7 @@ class Disentanglement(object):
         self.pbar.write("[Training Finished]")
         self.pbar.close()
 
-
-    def visualize_traverse(self, limit=3, inter=2 / 3, loc=-1):
+    def visualize_traverse(self, image_length, image_width, limit=3, inter=2 / 3, loc=-1):
         self.net_mode(train=False)
 
         decoder = self.VAE.decode
@@ -133,74 +132,15 @@ class Disentanglement(object):
         random_img = random_img.to(self.device).unsqueeze(0)
         random_img_z = encoder(random_img)[:, :self.z_dim]
 
-        if self.dataset.lower() == 'dsprites':
-            fixed_idx1 = 87040  # square
-            fixed_idx2 = 332800  # ellipse
-            fixed_idx3 = 578560  # heart
-
-            fixed_img1 = self.data_loader.dataset.__getitem__(fixed_idx1)[0]
-            fixed_img1 = fixed_img1.to(self.device).unsqueeze(0)
-            fixed_img_z1 = encoder(fixed_img1)[:, :self.z_dim]
-
-            fixed_img2 = self.data_loader.dataset.__getitem__(fixed_idx2)[0]
-            fixed_img2 = fixed_img2.to(self.device).unsqueeze(0)
-            fixed_img_z2 = encoder(fixed_img2)[:, :self.z_dim]
-
-            fixed_img3 = self.data_loader.dataset.__getitem__(fixed_idx3)[0]
-            fixed_img3 = fixed_img3.to(self.device).unsqueeze(0)
-            fixed_img_z3 = encoder(fixed_img3)[:, :self.z_dim]
-
-            Z = {'fixed_square': fixed_img_z1, 'fixed_ellipse': fixed_img_z2,
-                 'fixed_heart': fixed_img_z3, 'random_img': random_img_z}
-
-        elif self.dataset.lower() == 'celeba':
-            fixed_idx1 = 191281  # 'CelebA/img_align_celeba/191282.jpg'
-            fixed_idx2 = 143307  # 'CelebA/img_align_celeba/143308.jpg'
-            fixed_idx3 = 101535  # 'CelebA/img_align_celeba/101536.jpg'
-            fixed_idx4 = 70059  # 'CelebA/img_align_celeba/070060.jpg'
-
-            fixed_img1 = self.data_loader.dataset.__getitem__(fixed_idx1)[0]
-            fixed_img1 = fixed_img1.to(self.device).unsqueeze(0)
-            fixed_img_z1 = encoder(fixed_img1)[:, :self.z_dim]
-
-            fixed_img2 = self.data_loader.dataset.__getitem__(fixed_idx2)[0]
-            fixed_img2 = fixed_img2.to(self.device).unsqueeze(0)
-            fixed_img_z2 = encoder(fixed_img2)[:, :self.z_dim]
-
-            fixed_img3 = self.data_loader.dataset.__getitem__(fixed_idx3)[0]
-            fixed_img3 = fixed_img3.to(self.device).unsqueeze(0)
-            fixed_img_z3 = encoder(fixed_img3)[:, :self.z_dim]
-
-            fixed_img4 = self.data_loader.dataset.__getitem__(fixed_idx4)[0]
-            fixed_img4 = fixed_img4.to(self.device).unsqueeze(0)
-            fixed_img_z4 = encoder(fixed_img4)[:, :self.z_dim]
-
-            Z = {'fixed_1': fixed_img_z1, 'fixed_2': fixed_img_z2,
-                 'fixed_3': fixed_img_z3, 'fixed_4': fixed_img_z4,
-                 'random': random_img_z}
-
-        elif self.dataset.lower() == '3dchairs':
-            fixed_idx1 = 40919  # 3DChairs/images/4682_image_052_p030_t232_r096.png
-            fixed_idx2 = 5172  # 3DChairs/images/14657_image_020_p020_t232_r096.png
-            fixed_idx3 = 22330  # 3DChairs/images/30099_image_052_p030_t232_r096.png
-
-            fixed_img1 = self.data_loader.dataset.__getitem__(fixed_idx1)[0]
-            fixed_img1 = fixed_img1.to(self.device).unsqueeze(0)
-            fixed_img_z1 = encoder(fixed_img1)[:, :self.z_dim]
-
-            fixed_img2 = self.data_loader.dataset.__getitem__(fixed_idx2)[0]
-            fixed_img2 = fixed_img2.to(self.device).unsqueeze(0)
-            fixed_img_z2 = encoder(fixed_img2)[:, :self.z_dim]
-
-            fixed_img3 = self.data_loader.dataset.__getitem__(fixed_idx3)[0]
-            fixed_img3 = fixed_img3.to(self.device).unsqueeze(0)
-            fixed_img_z3 = encoder(fixed_img3)[:, :self.z_dim]
-
-            Z = {'fixed_1': fixed_img_z1, 'fixed_2': fixed_img_z2,
-                 'fixed_3': fixed_img_z3, 'random': random_img_z}
-        else:
-            fixed_idx = 0
+        if self.name == 'flappybird':
+            fixed_idx = 111
             fixed_img = self.data_loader.dataset.__getitem__(fixed_idx)[0]
+
+            # import matplotlib.pyplot as plt
+            # x_t_image = fixed_img.numpy()
+            # plt.figure()
+            # plt.imshow(x_t_image[0])
+
             fixed_img = fixed_img.to(self.device).unsqueeze(0)
             fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
 
@@ -211,7 +151,7 @@ class Disentanglement(object):
         gifs = []
         for key in Z:
             z_ori = Z[key]
-            samples = []
+            # samples = []
             for row in range(self.z_dim):
                 if loc != -1 and row != loc:
                     continue
@@ -219,18 +159,16 @@ class Disentanglement(object):
                 for val in interpolation:
                     z[:, row] = val
                     sample = F.sigmoid(decoder(z)).data
-                    samples.append(sample)
+                    # samples.append(sample)
                     gifs.append(sample)
-            samples = torch.cat(samples, dim=0).cpu()
-            title = '{}_latent_traversal(iter:{})'.format(key, self.global_iter)
-            self.viz.images(samples, env=self.name + '/traverse',
-                            opts=dict(title=title), nrow=len(interpolation))
+            # samples = torch.cat(samples, dim=0).cpu()
+            # title = '{}_latent_traversal(iter:{})'.format(key, self.global_iter)
 
         if self.output_save:
             output_dir = os.path.join(self.output_dir, str(self.global_iter))
             mkdirs(output_dir)
             gifs = torch.cat(gifs)
-            gifs = gifs.view(len(Z), self.z_dim, len(interpolation), self.nc, 64, 64).transpose(1, 2)
+            gifs = gifs.view(len(Z), self.z_dim, len(interpolation), self.nc, image_length, image_width).transpose(1, 2)
             for i, key in enumerate(Z.keys()):
                 for j, val in enumerate(interpolation):
                     save_image(tensor=gifs[i][j].cpu(),
@@ -241,38 +179,6 @@ class Disentanglement(object):
                          str(os.path.join(output_dir, key + '.gif')), delay=10)
 
         self.net_mode(train=True)
-
-    def viz_init(self):
-        zero_init = torch.zeros([1])
-        self.viz.line(X=zero_init,
-                      Y=torch.stack([zero_init, zero_init], -1),
-                      env=self.name + '/lines',
-                      win=self.win_id['D_z'],
-                      opts=dict(
-                          xlabel='iteration',
-                          ylabel='D(.)',
-                          legend=['D(z)', 'D(z_perm)']))
-        self.viz.line(X=zero_init,
-                      Y=zero_init,
-                      env=self.name + '/lines',
-                      win=self.win_id['recon'],
-                      opts=dict(
-                          xlabel='iteration',
-                          ylabel='reconstruction loss', ))
-        self.viz.line(X=zero_init,
-                      Y=zero_init,
-                      env=self.name + '/lines',
-                      win=self.win_id['acc'],
-                      opts=dict(
-                          xlabel='iteration',
-                          ylabel='discriminator accuracy', ))
-        self.viz.line(X=zero_init,
-                      Y=zero_init,
-                      env=self.name + '/lines',
-                      win=self.win_id['kld'],
-                      opts=dict(
-                          xlabel='iteration',
-                          ylabel='kl divergence', ))
 
     def net_mode(self, train):
         if not isinstance(train, bool):
@@ -309,7 +215,7 @@ class Disentanglement(object):
 
             ckpts = [int(ckpt.split('-')[1]) for ckpt in ckpts]
             ckpts.sort(reverse=True)
-            ckptname = 'FVAE-'+str(ckpts[0])
+            ckptname = 'FVAE-' + str(ckpts[0])
 
         filepath = os.path.join(self.ckpt_dir, ckptname)
         if os.path.isfile(filepath):

@@ -14,14 +14,13 @@ import torch.optim as optim
 from utils.general_utils import mkdirs
 from utils.memory_utils import PrioritizedReplay
 from utils.model_utils import square_loss, handle_image_input
-from PIL import Image
-import matplotlib.pyplot as plt
 
 
 class DRLDataGenerator():
     def __init__(self, game_name, config):
         mkdirs(config.DRL.Learn.image_save_path)
-        self.image_save_path = os.path.join(config.DRL.Learn.image_save_path, game_name)
+        self.game_name = game_name
+        self.image_save_path = config.DRL.Learn.image_save_path
         self.config = config
         self.global_iter = 0
         use_cuda = config.DRL.Learn.cuda and torch.cuda.is_available()
@@ -140,24 +139,26 @@ class DRLDataGenerator():
 
         return minibatch, idxs, is_weights
 
-    def test_DRL_model(self):
+    def test_DRL_model(self, test_size=10000):
         x_t0_colored, r_0, terminal = self.game_state.next_frame(0)
         x_t = handle_image_input(x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
         # s_t = torch.stack(tensors=[x_t], dim=0)
         s_t = torch.cat(tuple(x_t for _ in range(4))).to(self.device)
-        while "flappy bird" != "angry bird":
+
+        while self.global_iter < test_size:
             with torch.no_grad():
                 readout = self.nn(s_t.unsqueeze(0))
             readout = readout.cpu().numpy()
             action_index = np.argmax(readout)
 
             x_t1_colored, r_t, terminal = self.game_state.next_frame(action_index)
-            x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
+            x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)],
+                                      save_image_path=self.image_save_path, iter=self.global_iter,
+                                      game_name=self.game_name)
             # s_t1 = torch.stack(tensors=[x_t1], dim=0).to(self.device)
             s_t1 = torch.cat((s_t[1:, :, :], x_t1.to(self.device)))
             s_t = s_t1
-
-
+            self.global_iter += 1
 
 
     def train_DRl_model(self):

@@ -36,9 +36,15 @@ DEG:
     beta1_D : 0.5
     beta2_D : 0.9
     dset_dir : ''
-    image_size : 80
+    image_length : 101
+    image_width : 72
     num_workers : 2
     print_iter : 500
     ckpt_dir : '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DEG/flappybird/'
     ckpt_save_iter: 10000
+    ckpt_load: True
     output_save: True
+    output_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DEG/flappybird/'
+    dset_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
+    viz_ta_iter: 10000
+    image_type: 'origin'
