@@ -102,7 +102,6 @@ class FactorVAE1(nn.Module):
 
 
 class FactorVAE2(nn.Module):
-    """Encoder and Decoder architecture for 3D Shapes, Celeba, Chairs data."""
 
     def __init__(self, z_dim=10):
         super(FactorVAE2, self).__init__()
@@ -111,6 +110,12 @@ class FactorVAE2(nn.Module):
         # Conv2d(in_channels, out_channels, kernel_size, stride, padding)
         # padding_width = get_same_padding(input_image_width, kernel_sizes[cov_index], strides[cov_index], 1)
         self.encode = nn.Sequential(
+            # nn.Conv2d(3, 32, (3, 3), (2, 1), (2, 0)),
+            # nn.ReLU(True),
+            # nn.Conv2d(32, 32, (2, 4), 2, (2, 0)),
+            # nn.ReLU(True),
+            # nn.Conv2d(32, 32, (2, 4), 2, (2, 0)),
+            # nn.ReLU(True),
             nn.Conv2d(3, 32, 4, 2, 1),
             nn.ReLU(True),
             nn.Conv2d(32, 32, 4, 2, 1),
@@ -121,7 +126,7 @@ class FactorVAE2(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(64, 256, 4, 1),
             nn.ReLU(True),
-            nn.Conv2d(256, 2 * z_dim, (3, 1))
+            nn.Conv2d(256, 2 * z_dim, (1, 1))
         )
 
         # ConvTranspose2d (in_channels, out_channels, kernel_size, stride, padding)
@@ -132,24 +137,22 @@ class FactorVAE2(nn.Module):
             nn.ReLU(True),
             nn.ConvTranspose2d(64, 64, 4, 2, 1),
             nn.ReLU(True),
-            nn.ConvTranspose2d(64, 32, 4, 2, (0, 0)),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),
             nn.ReLU(True),
-            nn.ConvTranspose2d(32, 32, (4, 4), (3, 2), (1, 1)),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1),
             nn.ReLU(True),
-            # nn.ConvTranspose2d(32, 32, (2, 4), (3, 2), (2, 0)),
+            nn.ConvTranspose2d(32, 3, 4, 2, 1),
             # nn.ReLU(True),
-            nn.ConvTranspose2d(32, 3, (3, 4), (2, 2), (3, 1))
+            # nn.ConvTranspose2d(32, 32, (2, 4), 2, (2, 0)),
+            # nn.ReLU(True),
+            # nn.ConvTranspose2d(32, 32, (2, 4), 2, (2, 0)),
+            # nn.ReLU(True),
+            # nn.ConvTranspose2d(32, 3, (3, 3), (2, 1), (2, 0))
         )
-        # output:[101,72]
+        # dim_size = ((input.size(d + 2) - 1) * stride[d] - 2 * padding[d] + kernel_size[d])
 
-        # dim_size = ((input.size(d + 2) - 1) * stride[d] -
-        #             2 * padding[d] + kernel_size[d])
-        # min_sizes.append(dim_size)
-        # max_sizes.append(min_sizes[d] + stride[d] - 1)
         self.weight_init()
 
-        # self.decoder_output_layer = nn.ConvTranspose2d(32, 3, 4, 2, 5)
-        # normal_init(self.decoder_output_layer)
 
     def weight_init(self, mode='normal'):
         if mode == 'kaiming':

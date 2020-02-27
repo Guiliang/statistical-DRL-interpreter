@@ -108,6 +108,10 @@ class Disentanglement(object):
                             self.global_iter, vae_recon_loss.item(), vae_kld.item(), vae_tc_loss.item(),
                             D_tc_loss.item()))
 
+                if self.global_iter % self.ckpt_save_iter == 0:
+                    print('Saving VAE models')
+                    self.save_checkpoint('FVAE-' + str(self.global_iter), verbose=True)
+
                 if self.global_iter % self.viz_ta_iter == 0:
                     self.visualize_traverse(image_length=self.image_length,
                                             image_width=self.image_width,
