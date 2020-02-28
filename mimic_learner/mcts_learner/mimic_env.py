@@ -1,4 +1,6 @@
 import numpy as np
+import numpy as np
+from scipy.stats import norm
 from mimic_learner.mcts_learner.static_env import StaticEnv
 
 
@@ -85,8 +87,9 @@ class MimicEnv(StaticEnv):
         return np.unravel_index(state, shape) == (0, 6) or step_idx >= 15
 
     @staticmethod
-    def initial_state(shape=(7, 7)):
-        return (shape[0]-1) * shape[0]
+    def initial_state(state_data=None):
+        mu, std = norm.fit(state_data)
+        return mu, std
 
     @staticmethod
     def get_obs_for_states(states):

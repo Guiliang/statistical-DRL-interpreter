@@ -1,7 +1,7 @@
 """solver.py"""
 
 import os
-import visdom
+# import visdom
 from tqdm import tqdm
 
 import torch
