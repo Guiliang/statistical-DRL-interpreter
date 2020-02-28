@@ -19,7 +19,7 @@ DRL:
 #    beta1_D: 0.5
 #    beta2_D: 0.9
     input_image_size: 80
-    image_save_path: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/flappybird/'
+    data_save_path: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/flappybird/'
 
 DEG:
   FVAE:
@@ -35,7 +35,6 @@ DEG:
     lr_D : 0.0001
     beta1_D : 0.5
     beta2_D : 0.9
-    dset_dir : ''
     image_length : 64
     image_width : 64
     num_workers : 2
@@ -48,3 +47,7 @@ DEG:
     dset_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
     viz_ta_iter: 10000
     image_type: 'color'
+
+Mimic:
+  Learn:
+    num_simulations: 200

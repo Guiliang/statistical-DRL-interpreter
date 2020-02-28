@@ -63,6 +63,15 @@ class FlappyBirdConfig(object):
             beta2_D = None
             viz_ta_iter = None
 
+    class Mimic(InitWithDict):
+
+        def __init__(self, init):
+            super(FlappyBirdConfig.Mimic, self).__init__(init)
+            self.Learn = FlappyBirdConfig.Mimic.Learn(init["Learn"])
+
+        class Learn(InitWithDict):
+            num_simulations = None
+
     @staticmethod
     def load(file_path):
         config = yaml.load(open(file_path, 'r'))

@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import torchvision.transforms.functional as ttf
 import torchvision.utils as tu
 import math
-import numpy as np
-import cv2
+
+
+# import numpy as np
+# import cv2
 
 
 def recon_loss(x, x_recon):
@@ -58,10 +60,7 @@ def calculate_conv_output_dimension(size, kernel_size, stride, dilation, padding
 
 def handle_image_input(img_colored,
                        if_print_img=False,
-                       if_binarize=True,
-                       save_image_path=None,
-                       game_name=None,
-                       iter=None):
+                       if_binarize=True):
     img_colored = Image.fromarray(img_colored)
     img_colored_resized = ttf.resize(img_colored, size=(84, 84))
     # img_colored = ttf.rotate(img_colored, angle=270)
@@ -75,29 +74,43 @@ def handle_image_input(img_colored,
     min_value = torch.min(x_t)
     if if_binarize:
         # x_t = x_t > (max_value - min_value) / 2  # mean value
-        x_t_b = x_t > min_value
-        x_t_b = x_t_b * 255
-        x_t_b = x_t_b.float()
+        x_t = x_t > min_value
+        x_t = x_t * 255
+        x_t = x_t.float()
     if if_print_img:
-        x_t_image = x_t_b.numpy()
+        x_t_image = x_t.numpy()
         plt.figure()
         plt.imshow(x_t_image[0])
 
-    if save_image_path is not None:
-        img_colored_save = ttf.rotate(img_colored, angle=270)
-        img_colored_save = ttf.hflip(img_colored_save)
-        tu.save_image(ttf.to_tensor(img_colored_save),
-                      open(save_image_path + 'origin/images/' + game_name + '-' + str(iter) + '_color.png', 'wb'))
-        # img_colored_save_resized = ttf.resize(img_colored_save, size=(84, 84))
-        # tu.save_image(ttf.to_tensor(img_colored_save),
-        #               open(save_image_path + 'color/images/' + game_name + '-' + str(iter) + '_color.png', 'wb'))
-        # img_gray_save = ttf.to_grayscale(img_colored_save, num_output_channels=1)
-        # tu.save_image(ttf.to_tensor(img_gray_save),
-        #               open(save_image_path + 'gray/images/' + game_name + '-' + str(iter) + '_gray.png', 'wb'))
-        # x_t_save = ttf.to_tensor(img_gray_save)
-        # x_t_b_save = x_t_save > min_value
-        # x_t_b_save = x_t_b_save.float()
-        # tu.save_image(x_t_b_save,
-        #               open(save_image_path + 'binary/images/' + game_name + '-' + str(iter) + '_binary.png', 'wb'))
+    return x_t
 
-    return x_t_b
+
+def store_state_action_data(img_colored, action_values, reward,
+                            save_image_path, action_values_file,
+                            game_name, iteration_number):
+    action_values_str = ''
+    for action_value in action_values:
+        action_values_str += str(action_value) + ','
+    action_values_str += str(reward) + '\n'
+    action_values_file.write(action_values_str)
+
+    img_colored = Image.fromarray(img_colored)
+    img_colored_save = ttf.rotate(img_colored, angle=270)
+    img_colored_save = ttf.hflip(img_colored_save)
+    tu.save_image(ttf.to_tensor(img_colored_save),
+                  open(save_image_path + 'origin/images/' + game_name + '-' + str(iteration_number) + '_color.png',
+                       'wb'))
+    img_colored_save_resized = ttf.resize(img_colored_save, size=(64, 64))
+    tu.save_image(ttf.to_tensor(img_colored_save_resized),
+                  open(save_image_path + 'color/images/' + game_name + '-' + str(iteration_number) + '_color.png',
+                       'wb'))
+    img_gray_save = ttf.to_grayscale(img_colored_save_resized, num_output_channels=1)
+    tu.save_image(ttf.to_tensor(img_gray_save),
+                  open(save_image_path + 'gray/images/' + game_name + '-' + str(iteration_number) + '_gray.png', 'wb'))
+    x_t_save = ttf.to_tensor(img_gray_save)
+    min_value = torch.min(x_t_save)
+    x_t_b_save = x_t_save > min_value
+    x_t_b_save = x_t_b_save.float()
+    tu.save_image(x_t_b_save,
+                  open(save_image_path + 'binary/images/' + game_name + '-' + str(iteration_number) + '_binary.png',
+                       'wb'))

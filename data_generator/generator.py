@@ -1,26 +1,26 @@
-import random
-import sys
 import os
-from data_generator.fb_game.flappy_bird import FlappyBird
-from data_generator.nn_drl.dqn_fb import FlappyBirdDQN
+import random
 # from src.deep_q_network import DeepQNetwork
 from collections import deque
+
 import numpy as np
-from tqdm import tqdm
-import torchvision as tv
-import torch.nn.functional as tnf
 import torch
+import torch.nn.functional as tnf
 import torch.optim as optim
+from tqdm import tqdm
+
+from data_generator.fb_game.flappy_bird import FlappyBird
+from data_generator.nn_drl.dqn_fb import FlappyBirdDQN
 from utils.general_utils import mkdirs
 from utils.memory_utils import PrioritizedReplay
-from utils.model_utils import square_loss, handle_image_input
+from utils.model_utils import handle_image_input, store_state_action_data
 
 
 class DRLDataGenerator():
     def __init__(self, game_name, config):
         mkdirs(config.DRL.Learn.image_save_path)
         self.game_name = game_name
-        self.image_save_path = config.DRL.Learn.image_save_path
+        self.data_save_path = config.DRL.Learn.image_save_path
         self.config = config
         self.global_iter = 0
         use_cuda = config.DRL.Learn.cuda and torch.cuda.is_available()
@@ -45,7 +45,6 @@ class DRLDataGenerator():
         self.optim = optim.Adam(self.nn.parameters(), lr=self.config.DRL.Learn.learning_rate)
         if config.DRL.Learn.ckpt_load:
             self.load_checkpoint(model_name='flappy_bird_model')
-
 
         # torch.save(self.nn.state_dict(), "{}/flappy_bird_state".format(self.config.DRL.Learn.ckpt_dir))
         # self.trainTransform = tv.transforms.Compose([tv.transforms.Resize(size=(80, 80)),
@@ -80,10 +79,11 @@ class DRLDataGenerator():
         a_t[action_index] = 1
         # scale down epsilon
         if epsilon > self.config.DRL.Learn.final_epsilon and time_step > self.config.DRL.Learn.observe:
-            epsilon -= (self.config.DRL.Learn.initial_epsilon - self.config.DRL.Learn.final_epsilon) / self.config.DRL.Learn.explore
+            epsilon -= (
+                               self.config.DRL.Learn.initial_epsilon - self.config.DRL.Learn.final_epsilon) / self.config.DRL.Learn.explore
         x_t1_colored, r_t, terminal = self.game_state.next_frame(action_index)
         x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
-                                  # save_image_path=self.image_save_path, iter=time_step).to(self.device)
+        # save_image_path=self.image_save_path, iter=time_step).to(self.device)
         # s_t1 = torch.stack(tensors=[x_t1], dim=0).to(self.device)
         s_t1 = torch.cat((s_t[1:, :, :], x_t1.to(self.device)))
         with torch.no_grad():
@@ -128,7 +128,6 @@ class DRLDataGenerator():
             self.nn.load_state_dict(checkpoint['model_states']['FlappyBirdDQN'])
             self.optim.load_state_dict(checkpoint['optim_states']['optim_DQN'])
 
-
     def sample_batch(self):
         if self.apply_prioritize_memory:
             minibatch, idxs, is_weights = self.memory.sample(self.config.DRL.Learn.batch)
@@ -139,27 +138,27 @@ class DRLDataGenerator():
 
         return minibatch, idxs, is_weights
 
-    def test_DRL_model(self, test_size=10000):
-        x_t0_colored, r_0, terminal = self.game_state.next_frame(0)
-        x_t = handle_image_input(x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
-        # s_t = torch.stack(tensors=[x_t], dim=0)
-        s_t = torch.cat(tuple(x_t for _ in range(4))).to(self.device)
+    def test_model_and_generate_data(self, test_size=10000):
 
-        while self.global_iter < test_size:
-            with torch.no_grad():
-                readout = self.nn(s_t.unsqueeze(0))
-            readout = readout.cpu().numpy()
-            action_index = np.argmax(readout)
-
-            x_t1_colored, r_t, terminal = self.game_state.next_frame(action_index)
-            x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)],
-                                      save_image_path=self.image_save_path, iter=self.global_iter,
-                                      game_name=self.game_name)
-            # s_t1 = torch.stack(tensors=[x_t1], dim=0).to(self.device)
-            s_t1 = torch.cat((s_t[1:, :, :], x_t1.to(self.device)))
-            s_t = s_t1
+        with open(self.data_save_path, 'w')as action_values_file:
+            x_t0_colored, r_t, terminal = self.game_state.next_frame(0)
+            x_t0 = handle_image_input(x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
+            s_t0 = torch.cat(tuple(x_t0 for _ in range(4))).to(self.device)
             self.global_iter += 1
-
+            x_t1 = x_t0
+            while self.global_iter < test_size:
+                with torch.no_grad():
+                    readout = self.nn(s_t0.unsqueeze(0))
+                readout = readout.cpu().numpy()
+                store_state_action_data(img_colored=x_t1, action_values=readout, reward=r_t,
+                                        save_image_path=self.data_save_path, action_values_file=action_values_file,
+                                        game_name=self.game_name, iteration_number=self.global_iter)
+                action_index = np.argmax(readout)
+                x_t1_colored, r_t, terminal = self.game_state.next_frame(action_index)
+                x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
+                s_t1 = torch.cat((s_t0[1:, :, :], x_t1.to(self.device)))
+                s_t0 = s_t1
+                self.global_iter += 1
 
     def train_DRl_model(self):
         # get the first state by doing nothing and preprocess the image to 80x80x4
@@ -196,7 +195,7 @@ class DRLDataGenerator():
                         y_batch.append(r_batch[i])
                     else:
                         max_readout_t1_batch = torch.max(readout_t1_batch[i], dim=0)[0]
-                        y_batch.append(r_batch[i] + self.config.DRL.Learn.gamma*max_readout_t1_batch)
+                        y_batch.append(r_batch[i] + self.config.DRL.Learn.gamma * max_readout_t1_batch)
                 readout_action = torch.sum(torch.mul(readout_t0_batch, a_batch), dim=1)
 
                 y_batch = torch.stack(y_batch).squeeze()
@@ -207,7 +206,8 @@ class DRLDataGenerator():
                         idx = idxs[i]
                         self.memory.update(idx, errors[i])
 
-                DRL_loss = (torch.FloatTensor(is_weights).to(self.device) * tnf.mse_loss(readout_action, y_batch)).mean()
+                DRL_loss = (torch.FloatTensor(is_weights).to(self.device) * tnf.mse_loss(readout_action,
+                                                                                         y_batch)).mean()
 
                 # DRL_loss = square_loss(x=readout_action, y=y_batch)
                 self.optim.zero_grad()
@@ -232,5 +232,6 @@ class DRLDataGenerator():
             else:
                 state = "train"
 
-            print("TIMESTEP", self.global_iter, "/ STATE", state, "/ EPSILON", epsilon, "/ ACTION", action_index, "/ REWARD",
+            print("TIMESTEP", self.global_iter, "/ STATE", state, "/ EPSILON", epsilon, "/ ACTION", action_index,
+                  "/ REWARD",
                   r_t, "/ Q_MAX %e" % np.max(readout_t0))
