@@ -18,9 +18,9 @@ from utils.model_utils import handle_image_input, store_state_action_data
 
 class DRLDataGenerator():
     def __init__(self, game_name, config):
-        mkdirs(config.DRL.Learn.image_save_path)
+        mkdirs(config.DRL.Learn.data_save_path)
         self.game_name = game_name
-        self.data_save_path = config.DRL.Learn.image_save_path
+        self.data_save_path = config.DRL.Learn.data_save_path
         self.config = config
         self.global_iter = 0
         use_cuda = config.DRL.Learn.cuda and torch.cuda.is_available()
@@ -140,17 +140,19 @@ class DRLDataGenerator():
 
     def test_model_and_generate_data(self, test_size=10000):
 
-        with open(self.data_save_path, 'w')as action_values_file:
-            x_t0_colored, r_t, terminal = self.game_state.next_frame(0)
+        with open(self.data_save_path+'action_values.txt', 'w')as action_values_file:
+            action_index = 0
+            x_t0_colored, r_t, terminal = self.game_state.next_frame(action_index)
             x_t0 = handle_image_input(x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
             s_t0 = torch.cat(tuple(x_t0 for _ in range(4))).to(self.device)
             self.global_iter += 1
-            x_t1 = x_t0
+            x_t1_colored = x_t0_colored
             while self.global_iter < test_size:
                 with torch.no_grad():
                     readout = self.nn(s_t0.unsqueeze(0))
                 readout = readout.cpu().numpy()
-                store_state_action_data(img_colored=x_t1, action_values=readout, reward=r_t,
+                store_state_action_data(img_colored=x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)],
+                                        action_values=readout[0], reward=r_t, action_index=action_index,
                                         save_image_path=self.data_save_path, action_values_file=action_values_file,
                                         game_name=self.game_name, iteration_number=self.global_iter)
                 action_index = np.argmax(readout)

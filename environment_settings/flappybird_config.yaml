@@ -50,4 +50,6 @@ DEG:
 
 Mimic:
   Learn:
+    cuda : True
     num_simulations: 200
+    replay_memory_size: 10000

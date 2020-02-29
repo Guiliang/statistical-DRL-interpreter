@@ -6,6 +6,7 @@ class FlappyBirdConfig(object):
     def __init__(self, init):
         self.DEG = FlappyBirdConfig.DEG(init["DEG"])
         self.DRL = FlappyBirdConfig.DRL(init["DRL"])
+        self.Mimic = FlappyBirdConfig.Mimic(init["Mimic"])
 
     class DEG(InitWithDict):
 
@@ -71,6 +72,7 @@ class FlappyBirdConfig(object):
 
         class Learn(InitWithDict):
             num_simulations = None
+            replay_memory_size = None
 
     @staticmethod
     def load(file_path):

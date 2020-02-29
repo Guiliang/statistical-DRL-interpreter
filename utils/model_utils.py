@@ -85,10 +85,10 @@ def handle_image_input(img_colored,
     return x_t
 
 
-def store_state_action_data(img_colored, action_values, reward,
+def store_state_action_data(img_colored, action_values, reward, action_index,
                             save_image_path, action_values_file,
                             game_name, iteration_number):
-    action_values_str = ''
+    action_values_str = str(action_index)+','
     for action_value in action_values:
         action_values_str += str(action_value) + ','
     action_values_str += str(reward) + '\n'
