@@ -4,3 +4,5 @@
 .idea/statistical-DRL-interpreter.iml
 .idea/workspace.xml
 *.pyc
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/libraries/
