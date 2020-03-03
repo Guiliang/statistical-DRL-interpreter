@@ -11,11 +11,12 @@ from utils.memory_utils import PrioritizedReplay
 
 class MimicLearner():
     def __init__(self, game_name, config):
-        self.mimic_env = MimicEnv
+        self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim)
         self.game_name = game_name
         self.action_number = config.DRL.Learn.actions
 
         self.num_simulations = config.Mimic.Learn.num_simulations
+        self.episodic_sample_number = config.Mimic.Learn.episodic_sample_number
         self.data_save_dir = config.DEG.FVAE.dset_dir
         self.image_type = config.DEG.FVAE.image_type
         self.iteration_number = 0
@@ -25,11 +26,10 @@ class MimicLearner():
         self.dientangler.load_checkpoint()
 
         # experience replay
-        self.memory = PrioritizedReplay(capacity=config.Mimic.Learn.replay_memory_size)
+        # self.memory = PrioritizedReplay(capacity=config.Mimic.Learn.replay_memory_size)
+        self.memory = []
 
-        self.data_loader()
-
-    def data_loader(self):
+    def data_loader(self, episode_number):
 
         def gather_data_values(action_value):
             action_value_items = action_value.split(',')
@@ -42,7 +42,8 @@ class MimicLearner():
 
         with open(self.data_save_dir + '/' + self.game_name + '/action_values.txt', 'r') as f:
             action_values = f.readlines()
-        while self.iteration_number < len(action_values) - 1:
+
+        while self.iteration_number < self.episodic_sample_number*episode_number:
             action_index_t0, action_values_list_t0, reward_t0 = gather_data_values(action_values[self.iteration_number])
             action_index_t1, action_values_list_t1, reward_t1 = gather_data_values(action_values[self.iteration_number])
 
@@ -51,21 +52,34 @@ class MimicLearner():
                                                                            self.image_type,
                                                                            self.iteration_number))
             x_t0_resized = ttf.resize(image, size=(64, 64))
-            x_t0 = ttf.to_tensor(x_t0_resized).unsqueeze(0).to(self.dientangler.device)
-            _, _, _, z0 = self.dientangler.VAE(x_t0)
+            with torch.no_grad():
+                x_t0 = ttf.to_tensor(x_t0_resized).unsqueeze(0).to(self.dientangler.device)
+                _, _, _, z0 = self.dientangler.VAE(x_t0)
+                z0 = z0.cpu().numpy()
 
             image = Image.open('{0}/{1}/{2}/images/{1}-{3}_{2}.png'.format(self.data_save_dir,
                                                                            self.game_name,
                                                                            self.image_type,
                                                                            self.iteration_number+1))
             x_t1_resized = ttf.resize(image, size=(64, 64))
-            x_t1 = ttf.to_tensor(x_t1_resized).unsqueeze(0).to(self.dientangler.device)
-            _, _, _, z1 = self.dientangler.VAE(x_t1)
+            with torch.no_grad():
+                x_t1 = ttf.to_tensor(x_t1_resized).unsqueeze(0).to(self.dientangler.device)
+                _, _, _, z1 = self.dientangler.VAE(x_t1)
+                z1 = z1.cpu().numpy()
 
             self.iteration_number += 1
-            error = abs(reward_t0 + max(action_values_list_t1)-action_values_list_t0[action_index_t0])
+            delta = abs(reward_t0 + max(action_values_list_t1)-action_values_list_t0[action_index_t0])
 
-            self.memory.add(error, (z0, action_index_t0, reward_t0, z1, 0))
+            # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
+            self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
+
 
     def train_mimic_model(self):
-        execute_episode(agent_netw=None, num_simulations=self.num_simulations, TreeEnv=self.mimic_env)
+
+        for episode_number in range(1, 100):
+            self.data_loader(episode_number)
+            self.mimic_env.add_data(self.memory)
+
+            execute_episode(num_simulations=self.num_simulations,
+                            TreeEnv=self.mimic_env,
+                            data=self.memory)
