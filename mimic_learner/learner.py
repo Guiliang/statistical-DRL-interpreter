@@ -10,8 +10,8 @@ from utils.memory_utils import PrioritizedReplay
 
 
 class MimicLearner():
-    def __init__(self, game_name, config):
-        self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim)
+    def __init__(self, game_name, config, local_test_flag):
+        self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim*2)
         self.game_name = game_name
         self.action_number = config.DRL.Learn.actions
 
@@ -22,8 +22,10 @@ class MimicLearner():
         self.iteration_number = 0
 
         # initialize dientangler
-        self.dientangler = Disentanglement(config)
-        self.dientangler.load_checkpoint()
+        self.dientangler = Disentanglement(config, local_test_flag)
+
+        if not local_test_flag:
+            self.dientangler.load_checkpoint()
 
         # experience replay
         # self.memory = PrioritizedReplay(capacity=config.Mimic.Learn.replay_memory_size)
@@ -43,7 +45,7 @@ class MimicLearner():
         with open(self.data_save_dir + '/' + self.game_name + '/action_values.txt', 'r') as f:
             action_values = f.readlines()
 
-        while self.iteration_number < self.episodic_sample_number*episode_number:
+        while self.iteration_number < self.episodic_sample_number * episode_number:
             action_index_t0, action_values_list_t0, reward_t0 = gather_data_values(action_values[self.iteration_number])
             action_index_t1, action_values_list_t1, reward_t1 = gather_data_values(action_values[self.iteration_number])
 
@@ -60,7 +62,7 @@ class MimicLearner():
             image = Image.open('{0}/{1}/{2}/images/{1}-{3}_{2}.png'.format(self.data_save_dir,
                                                                            self.game_name,
                                                                            self.image_type,
-                                                                           self.iteration_number+1))
+                                                                           self.iteration_number + 1))
             x_t1_resized = ttf.resize(image, size=(64, 64))
             with torch.no_grad():
                 x_t1 = ttf.to_tensor(x_t1_resized).unsqueeze(0).to(self.dientangler.device)
@@ -68,11 +70,10 @@ class MimicLearner():
                 z1 = z1.cpu().numpy()
 
             self.iteration_number += 1
-            delta = abs(reward_t0 + max(action_values_list_t1)-action_values_list_t0[action_index_t0])
+            delta = abs(reward_t0 + max(action_values_list_t1) - action_values_list_t0[action_index_t0])
 
             # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
             self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
-
 
     def train_mimic_model(self):
 

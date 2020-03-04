@@ -7,6 +7,7 @@ import math
 import random as rd
 import collections
 import numpy as np
+from scipy.stats import norm
 
 # Exploration constant
 c_PUCT = 1.38
@@ -59,16 +60,16 @@ class MCTSNode:
             self.depth = 0
             parent = DummyNode()
         else:
-            self.depth = parent.depth+1
+            self.depth = parent.depth + 1
         self.parent = parent
         self.action = action  # continuous actions
         self.state = state
         self.n_actions_types = n_actions_types
-        self.is_expanded = False
         self.children = {}
         self.n_vlosses = 0
         self.child_N = [collections.defaultdict(float) for i in range(n_actions_types)]
         self.child_W = [collections.defaultdict(float) for i in range(n_actions_types)]
+        self.is_leaf = True
 
     @property
     def N(self):
@@ -101,12 +102,21 @@ class MCTSNode:
 
     @property
     def child_Q(self):
-        return self.child_W / (1 + self.child_N)
+        child_Q_return = []
+        for dim in range(len(self.child_W)):
+            child_W_subdim = np.asarray(list(self.child_W[dim].values()))
+            child_N_subdim = np.asarray(list(self.child_N[dim].values()))
+            child_Q_return.append(child_W_subdim / (1 + child_N_subdim))
+        return child_Q_return
 
     @property
     def child_U(self):
-        return (c_PUCT * math.sqrt(1 + self.N) *
-                self.child_prior / (1 + self.child_N))
+        # TODO: need to be fixed
+        child_U_return = []
+        for dim in range(len(self.child_N)):
+            child_N_subdim = np.asarray(list(self.child_N[dim].values()))
+            child_U_return.append(c_PUCT * math.sqrt(1 + self.N) / (1 + child_N_subdim))
+        return child_U_return
 
     @property
     def child_action_score(self):
@@ -114,10 +124,16 @@ class MCTSNode:
         Action_Score(s, a) = Q(s, a) + U(s, a) as in paper. A high value
         means the node should be traversed.
         """
-        return self.child_Q + self.child_U
+        child_Q = self.child_Q
+        child_U = self.child_U
+        child_action_score_return = []
+        for dim in range(len(self.child_N)):
+            child_action_score_return.append(child_Q[dim]+child_U[dim])
+        return np.asarray(child_action_score_return)
 
-    def select_leaf(self):
+    def select_leaf(self, reference_data=None):
         """
+         :param reference_data: the data to be splitted
         Traverses the MCT rooted in the current node until it finds a leaf
         (i.e. a node that only exists in its parent node in terms of its
         child_N and child_W values but not as a dedicated node in the parent's
@@ -131,14 +147,57 @@ class MCTSNode:
         while True:
             current.N += 1
             # Encountered leaf node (i.e. node that is not yet expanded).
-            if not current.is_expanded:
+            if current.is_leaf:
+                if reference_data is not None:
+                    self.select_expand_action(k=100, reference_data=reference_data)
+                    # TODO write progressive widening for k
                 break
             # Choose action with highest score.
-            best_move = np.argmax(current.child_action_score)
-            current = current.maybe_add_child(best_move)
+            child_action_score = current.child_action_score
+            best_move_index = np.unravel_index(child_action_score.argmax(), child_action_score.shape)
+            current = current.maybe_add_child(best_move_index)
         return current
 
-    def maybe_add_child(self, action):
+    def select_expand_action(self, k, reference_data):
+        """
+        :param k: the number of actions to be explore, k should be decide by progressive widening.
+        """
+        self.is_leaf = False
+        split_dimension = len(reference_data[0][0]) + len(reference_data[0][3])
+        for subset in self.state:
+            subset_data = None
+            for data_index in subset:
+                data_line = np.expand_dims(np.concatenate([reference_data[data_index][0],
+                                                           reference_data[data_index][3]]), axis=0)
+                if subset_data is not None:
+                    subset_data = np.concatenate([subset_data, data_line])
+                else:
+                    subset_data = data_line
+            for dim in range(split_dimension):
+                split_values = np.sort(subset_data[:, dim])
+                split_gap = len(split_values) / k
+                for split_index in range(k):
+                    split_value = split_values[int(split_index * split_gap)]
+                    split_subset_delta_1 = []
+                    split_subset_delta_2 = []
+                    for i in range(len(subset)):
+                        if subset_data[i, dim] < split_value:
+                            split_subset_delta_1.append(reference_data[subset[i]][-1])
+                        else:
+                            split_subset_delta_2.append(reference_data[subset[i]][-1])
+                    std_weighted_sum = 0
+                    if len(split_subset_delta_1) > 0:
+                        mu1, std1 = norm.fit(split_subset_delta_1)
+                        std_weighted_sum += float(len(split_subset_delta_1)) / len(subset) * std1
+                    if len(split_subset_delta_2) > 0:
+                        mu2, std2 = norm.fit(split_subset_delta_2)
+                        std_weighted_sum += float(len(split_subset_delta_2)) / len(subset) * std2
+
+                    self.child_W[dim][split_value] = -std_weighted_sum  # TODO: add progressive widening simulation?
+                    self.child_N[dim][split_value] = 0
+        print('finish expanding a node')
+
+    def maybe_add_child(self, best_move_index):
         """
         Adds a child node for the given action if it does not yet exists, and
         returns it.
@@ -146,10 +205,14 @@ class MCTSNode:
         child node.
         :return: Child MCTSNode.
         """
+        best_split_dim = best_move_index[0]
+        best_split_value = list(self.child_N[best_move_index[0]].keys())[best_move_index[1]]
+        action = "{0}_{1}".format(str(best_split_dim), str(best_split_value))
+
         if action not in self.children:
             # Obtain state following given action.
             new_state = self.TreeEnv.next_state(self.state, action)
-            self.children[action] = MCTSNode(new_state, self.n_actions,
+            self.children[action] = MCTSNode(new_state, self.n_actions_types,
                                              self.TreeEnv,
                                              action=action, parent=self)
         return self.children[action]
@@ -211,7 +274,6 @@ class MCTSNode:
         if self.is_expanded:
             self.revert_visits(up_to=up_to)
             return
-        self.is_expanded = True
         self.original_prior = self.child_prior = action_probs
         # This is a deviation from the paper that led to better results in
         # practice (following the MiniGo implementation).
@@ -249,7 +311,7 @@ class MCTSNode:
         return probs / np.sum(probs)
 
     def print_tree(self, level=0):
-        node_string = "\033[94m|" + "----"*level
+        node_string = "\033[94m|" + "----" * level
         node_string += "Node: action={}\033[0m".format(self.action)
         node_string += "\n• state:\n{}".format(self.state)
         node_string += "\n• N={}".format(self.N)
@@ -258,7 +320,7 @@ class MCTSNode:
         node_string += "\n• P:\n{}".format(self.child_prior)
         print(node_string)
         for _, child in sorted(self.children.items()):
-            child.print_tree(level+1)
+            child.print_tree(level + 1)
 
 
 class MCTS:
@@ -283,7 +345,7 @@ class MCTS:
         self.seconds_per_move = seconds_per_move
         self.simulations_per_move = simulations_per_move
         self.num_parallel = num_parallel
-        self.temp_threshold = None        # Overwritten in initialize_search
+        self.temp_threshold = None  # Overwritten in initialize_search
 
         self.qs = []
         self.rewards = []
@@ -322,7 +384,7 @@ class MCTS:
             failsafe += 1
             # self.root.print_tree()
             # print("_"*50)
-            leaf = self.root.select_leaf()
+            leaf = self.root.select_leaf(reference_data=self.data_all)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
             leaf.backup_value(value, up_to=self.root)
             # Discourage other threads to take the same trajectory via virtual loss
@@ -359,9 +421,9 @@ class MCTS:
         ob = self.TreeEnv.get_obs_for_states([self.root.state])
         self.obs.append(ob)
         self.searches_pi.append(
-            self.root.visits_as_probs()) # TODO: Use self.root.position.n < self.temp_threshold as argument
+            self.root.visits_as_probs())  # TODO: Use self.root.position.n < self.temp_threshold as argument
         self.qs.append(self.root.Q)
-        reward = (self.TreeEnv.get_return(self.root.children[action].state,  self.root.children[action].depth)
+        reward = (self.TreeEnv.get_return(self.root.children[action].state, self.root.children[action].depth)
                   - sum(self.rewards))
         self.rewards.append(reward)
 
@@ -415,4 +477,3 @@ def execute_episode(num_simulations, TreeEnv, data):
 
     obs = np.concatenate(mcts.obs)
     return (obs, mcts.searches_pi, ret, total_rew, mcts.root.state)
-

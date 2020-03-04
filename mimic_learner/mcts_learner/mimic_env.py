@@ -46,19 +46,24 @@ class MimicEnv(StaticEnv):
         done = self.pos == (0, 6) or self.step_idx == self.ep_length
         return state, reward, done, None
 
-    @staticmethod
-    def next_state(state, action, shape=(7, 7)):
-        pos = np.unravel_index(state, shape)
-        if action == UP:
-            pos = (pos[0] - 1, pos[1])
-        if action == DOWN:
-            pos = (pos[0] + 1, pos[1])
-        if action == LEFT:
-            pos = (pos[0], pos[1] - 1)
-        if action == RIGHT:
-            pos = (pos[0], pos[1] + 1)
-        pos = MimicEnv._limit_coordinates(pos, shape)
-        return pos[0] * shape[0] + pos[1]
+    def next_state(self, state, action):
+        dim_value = action.split('_')
+        subset_state1 = []
+        subset_state2 = []
+        for data_index in state:
+            data_line = self.data_all[data_index]
+            if int(dim_value[0]) < float(self.n_action_types) / 2:
+                if data_line[0][int(dim_value[0])] < float(dim_value[2]):
+                    subset_state1.append(data_index)
+                else:
+                    subset_state2.append(data_index)
+            else:
+                if data_line[3][int(dim_value[0]) - float(self.n_action_types / 2)] < float(dim_value[2]):
+                    subset_state1.append(data_index)
+                else:
+                    subset_state2.append(data_index)
+
+        return [subset_state1, subset_state2]
 
     @staticmethod
     def is_done_state(state, step_idx):
@@ -87,7 +92,7 @@ class MimicEnv(StaticEnv):
             for i in range(len(subsection)):
                 delta_all.append(self.data_all[subsection[i]][-1])
             mu, std = norm.fit(delta_all)
-            std_weighted_sum += float(len(subsection))/total_length * std
+            std_weighted_sum += float(len(subsection)) / total_length * std
         return -std_weighted_sum
 
     @staticmethod
