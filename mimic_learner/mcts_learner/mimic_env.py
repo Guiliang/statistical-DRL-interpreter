@@ -47,23 +47,29 @@ class MimicEnv(StaticEnv):
         return state, reward, done, None
 
     def next_state(self, state, action):
-        dim_value = action.split('_')
+        action_values = action.split('_')
+        subset_index = int(action_values[0])
+        dim = int(action_values[1])
+        split_value = float(action_values[2])
+        print('spitting rule is {0}'.format(action))
         subset_state1 = []
         subset_state2 = []
-        for data_index in state:
+        for data_index in state[subset_index]:
             data_line = self.data_all[data_index]
-            if int(dim_value[0]) < float(self.n_action_types) / 2:
-                if data_line[0][int(dim_value[0])] < float(dim_value[2]):
+            if dim < float(self.n_action_types) / 2:
+                if data_line[0][dim] < split_value:
                     subset_state1.append(data_index)
                 else:
                     subset_state2.append(data_index)
             else:
-                if data_line[3][int(dim_value[0]) - float(self.n_action_types / 2)] < float(dim_value[2]):
+                if data_line[3][dim - int(self.n_action_types / 2)] < split_value:
                     subset_state1.append(data_index)
                 else:
                     subset_state2.append(data_index)
-
-        return [subset_state1, subset_state2]
+        del state[subset_index]
+        state.insert(subset_index, subset_state2)
+        state.insert(subset_index, subset_state1)
+        return state
 
     @staticmethod
     def is_done_state(state, step_idx):
@@ -91,8 +97,9 @@ class MimicEnv(StaticEnv):
             delta_all = []
             for i in range(len(subsection)):
                 delta_all.append(self.data_all[subsection[i]][-1])
-            mu, std = norm.fit(delta_all)
-            std_weighted_sum += float(len(subsection)) / total_length * std
+            if len(delta_all) > 0:
+                mu, std = norm.fit(delta_all)
+                std_weighted_sum += float(len(subsection)) / total_length * std
         return -std_weighted_sum
 
     @staticmethod

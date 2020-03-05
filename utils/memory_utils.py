@@ -109,3 +109,15 @@ class SumTree:
         dataIdx = idx - self.capacity + 1
 
         return (idx, self.tree[idx], self.data[dataIdx])
+
+
+def mcts_state_to_list(state):
+    rec_all = ""
+    for subset in state:
+        rec = ""
+        for element in subset:
+            rec += (str(element) + ",")
+        rec_all += (rec[:-1] + "$")
+    # del rec_all[:-1]
+    return rec_all[:-1]
+
