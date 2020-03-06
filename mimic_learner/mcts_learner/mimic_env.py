@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import numpy as np
 import numpy as np
 from scipy.stats import norm
@@ -11,9 +13,10 @@ LEFT = 3
 
 class MimicEnv(StaticEnv):
 
-    def __init__(self, n_action_types=None, data_all=None):
+    def __init__(self, n_action_types=None):
         self.n_action_types = n_action_types
-        self.data_all = data_all
+        self.data_all = None
+        self.initial_std = None
 
     def add_data(self, data):
         if self.data_all is None:
@@ -21,6 +24,11 @@ class MimicEnv(StaticEnv):
         else:
             for transition in data:
                 self.data_all.append(transition)
+        delta_all = []
+        for data_line in self.data_all:
+            delta_all.append(data_line[-1])
+        mu, std = norm.fit(delta_all)
+        self.initial_std = std
 
     def reset(self):
         self.pos = (6, 0)
@@ -46,30 +54,49 @@ class MimicEnv(StaticEnv):
         done = self.pos == (0, 6) or self.step_idx == self.ep_length
         return state, reward, done, None
 
-    def next_state(self, state, action):
+    def next_state(self, state, action, parent_var_list=None):
         action_values = action.split('_')
         subset_index = int(action_values[0])
         dim = int(action_values[1])
         split_value = float(action_values[2])
         print('spitting rule is {0}'.format(action))
         subset_state1 = []
+        subset_delta1 = []
         subset_state2 = []
+        subset_delta2 = []
         for data_index in state[subset_index]:
             data_line = self.data_all[data_index]
             if dim < float(self.n_action_types) / 2:
                 if data_line[0][dim] < split_value:
                     subset_state1.append(data_index)
+                    subset_delta1.append(self.data_all[data_index][-1])
                 else:
                     subset_state2.append(data_index)
+                    subset_delta2.append(self.data_all[data_index][-1])
             else:
                 if data_line[3][dim - int(self.n_action_types / 2)] < split_value:
                     subset_state1.append(data_index)
+                    subset_delta1.append(self.data_all[data_index][-1])
                 else:
                     subset_state2.append(data_index)
+                    subset_delta2.append(self.data_all[data_index][-1])
         del state[subset_index]
         state.insert(subset_index, subset_state2)
         state.insert(subset_index, subset_state1)
-        return state
+        if len(subset_delta1) > 0:
+            _, var1 = norm.fit(subset_delta1)
+        else:
+            var1 = 0
+        if len(subset_state2) > 0:
+            _, var2 = norm.fit(subset_delta2)
+        else:
+            var2 = 0
+        # if parent_var_list is not None:
+        new_var_list = parent_var_list
+        del new_var_list[subset_index]
+        new_var_list.insert(subset_index, var2)
+        new_var_list.insert(subset_index, var1)
+        return state, new_var_list
 
     @staticmethod
     def is_done_state(state, step_idx):
@@ -79,11 +106,13 @@ class MimicEnv(StaticEnv):
     @staticmethod
     def initial_state(state_data=None):
         state_index = []
+        delta_all = []
         for i in range(len(state_data)):
             state_index.append(i)
+            delta_all.append(state_data[i][-1])
         #     delta.append(state_data[i][-1])
-        # mu, std = norm.fit(delta)
-        return [state_index]
+        _, std = norm.fit(delta_all)
+        return [state_index], [std]
 
     @staticmethod
     def get_obs_for_states(states):
@@ -100,7 +129,7 @@ class MimicEnv(StaticEnv):
             if len(delta_all) > 0:
                 mu, std = norm.fit(delta_all)
                 std_weighted_sum += float(len(subsection)) / total_length * std
-        return -std_weighted_sum
+        return self.initial_std - std_weighted_sum
 
     @staticmethod
     def _limit_coordinates(coord, shape):

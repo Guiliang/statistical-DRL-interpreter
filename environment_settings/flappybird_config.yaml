@@ -51,6 +51,6 @@ DEG:
 Mimic:
   Learn:
     cuda : True
-    num_simulations: 200
+    num_simulations: 1000
     replay_memory_size: 10000
     episodic_sample_number: 50

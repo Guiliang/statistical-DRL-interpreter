@@ -10,8 +10,8 @@ from copy import deepcopy
 
 import numpy as np
 from scipy.stats import norm
-import warnings
-warnings.filterwarnings("error")
+# import warnings
+# warnings.filterwarnings("error")
 # Exploration constant
 from utils.memory_utils import mcts_state_to_list
 
@@ -49,7 +49,7 @@ class MCTSNode:
     environment state.
     """
 
-    def __init__(self, state, n_actions_types, TreeEnv, action=None, parent=None):
+    def __init__(self, state, n_actions_types, TreeEnv, var_list, action=None, parent=None):
         """
         :param state: State that the node should hold.
         :param n_actions_types: Number of actions that can be performed in each
@@ -60,6 +60,7 @@ class MCTSNode:
         this node.
         :param parent: Parent node.
         """
+        self.var_list = var_list
         self.TreeEnv = TreeEnv
         if parent is None:
             self.depth = 0
@@ -72,18 +73,22 @@ class MCTSNode:
         self.n_actions_types = n_actions_types
         self.children = {}
         self.children_state_pair = {}  # to prevent duplicated split resulting the same state
+        self.check_split_state_pair = {}
+        self.split_var_index_dict = {}
         self.n_vlosses = 0
 
-        self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
+        # self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
+        for j in range(len(state)):
+            assert len(state[j]) > 0
         self.child_N = []
         self.child_W = []
         for j in range(len(state)):
-            if self.subset_split_flag[j]:
-                self.child_W.append([collections.defaultdict(float) for i in range(n_actions_types)])
-                self.child_N.append([collections.defaultdict(float) for i in range(n_actions_types)])
-            else:
-                self.child_W.append(None)
-                self.child_N.append(None)
+            # if self.subset_split_flag[j]:
+            self.child_W.append([collections.defaultdict(float) for i in range(n_actions_types)])
+            self.child_N.append([collections.defaultdict(float) for i in range(n_actions_types)])
+            # else:
+            #     self.child_W.append(None)
+            #     self.child_N.append(None)
 
         self.is_expanded = False
 
@@ -120,7 +125,6 @@ class MCTSNode:
             return self.parent.child_W[subset_index][dim][split_value]
         else:
             return self.parent.child_W[None]
-
 
     @W.setter
     def W(self, value):
@@ -169,74 +173,117 @@ class MCTSNode:
             child_action_score_return.append(child_Q[dim] + child_U[dim])
         return child_action_score_return
 
-    @ staticmethod
-    def select_leaf(current, reference_data=None):
+    def select_leaf(self, k=100, reference_data=None):
+        current = self
         while True:
             current.N += 1
             # Encountered leaf node (i.e. node that is not yet expanded).
             if not current.is_expanded:
                 if reference_data is not None:
-                    current.select_expand_action(k=100, reference_data=reference_data)
+                    current.select_expand_action(dim_per_split=100, reference_data=reference_data,
+                                                 add_estimate=True)
                     # TODO write progressive widening for k
                 break
             best_value_list = []
             best_index_list = []
             for j in range(len(current.state)):
-                if current.subset_split_flag[j]:
-                    child_action_score = current.child_action_score(subset_number=j)
-                    child_action_score = np.asarray(child_action_score)
-                    best_move_index = np.unravel_index(child_action_score.argmax(), child_action_score.shape)
-                    best_value_list.append(child_action_score[best_move_index])
-                    best_index_list.append(best_move_index)
-                else:
-                    best_value_list.append(float('-inf'))
-                    best_index_list.append(None)
+                # if current.subset_split_flag[j]:
+                child_action_score = current.child_action_score(subset_number=j)
+                child_action_score = np.asarray(child_action_score)
+                best_move_index = np.unravel_index(child_action_score.argmax(), child_action_score.shape)
+                best_value_list.append(child_action_score[best_move_index])
+                best_index_list.append(best_move_index)
+                # else:
+                #     best_value_list.append(float('-inf'))
+                #     best_index_list.append(None)
             best_subset_index = np.asarray(best_value_list).argmax()
             current = current.find_or_add_child(best_move_index=best_index_list[best_subset_index],
                                                 subset_index=best_subset_index)
         return current
 
-    def select_expand_action(self, k, reference_data):
+    def select_expand_action(self, dim_per_split, reference_data, add_estimate=False):
         """
-        :param k: the number of actions to be explore, k should be decide by progressive widening.
+        :param dim_per_split: the number of actions to be explore, k should be decide by progressive widening.
         """
+
+        total_length = 0
+        for subset in self.state:
+            total_length += len(subset)
+
         self.is_expanded = True
         split_dimension = self.n_actions_types
         for subset_index in range(len(self.state)):
-            if self.subset_split_flag[subset_index]:  # empty set requires no split
-                subset = self.state[subset_index]
-                subset_data = None
-                for data_index in subset:
-                    data_line = np.expand_dims(np.concatenate([reference_data[data_index][0],
-                                                               reference_data[data_index][3]]), axis=0)
-                    if subset_data is not None:
-                        subset_data = np.concatenate([subset_data, data_line])
+            # if self.subset_split_flag[subset_index]:  # empty set requires no split
+            subset = self.state[subset_index]
+            subset_data = None
+            for data_index in subset:
+                data_line = np.expand_dims(np.concatenate([reference_data[data_index][0],
+                                                           reference_data[data_index][3]]), axis=0)
+                if subset_data is not None:
+                    subset_data = np.concatenate([subset_data, data_line])
+                else:
+                    subset_data = data_line
+            for dim in range(split_dimension):
+                split_values = np.sort(subset_data[:, dim])
+                split_gap = len(split_values) / dim_per_split
+                for split_index in range(dim_per_split):
+                    split_value = round(float(split_values[int(split_index * split_gap)]), 6)
+                    std_weighted_sum = float(0)
+
+                    split_subset_1 = []
+                    split_subset_delta_1 = []
+                    split_subset_2 = []
+                    split_subset_delta_2 = []
+                    for i in range(len(subset)):
+                        if subset_data[i, dim] < split_value:
+                            split_subset_1.append(subset[i])
+                            split_subset_delta_1.append(reference_data[subset[i]][-1])
+                        else:
+                            split_subset_2.append(subset[i])
+                            split_subset_delta_2.append(reference_data[subset[i]][-1])
+
+                    new_state = []
+                    for state_index in range(len(self.state)):
+                        if state_index == subset_index:
+                            new_state.append(split_subset_1)
+                            new_state.append(split_subset_2)
+                        else:
+                            new_state.append(self.state[state_index])
+
+                    new_state_list = mcts_state_to_list(new_state)
+
+                    action_new = "{0}_{1}_{2}".format(str(subset_index), str(dim), str(split_value))
+                    if self.check_split_state_pair.get(new_state_list) is not None:
+                        action = self.check_split_state_pair.get(new_state_list)
+                        if action_new != action:
+                            std_weighted_sum = float('inf')  # prevent the duplicated split
                     else:
-                        subset_data = data_line
-                for dim in range(split_dimension):
-                    split_values = np.sort(subset_data[:, dim])
-                    split_gap = len(split_values) / k
-                    for split_index in range(k):
-                        split_value = round(float(split_values[int(split_index * split_gap)]), 6)
-                        split_subset_delta_1 = []
-                        split_subset_delta_2 = []
-                        for i in range(len(subset)):
-                            if subset_data[i, dim] < split_value:
-                                split_subset_delta_1.append(reference_data[subset[i]][-1])
-                            else:
-                                split_subset_delta_2.append(reference_data[subset[i]][-1])
-                        std_weighted_sum = 0
+                        self.check_split_state_pair.update({new_state_list: action_new})
+
+                    if len(split_subset_1) == 0 or len(split_subset_2) == 0:
+                        std_weighted_sum = float('inf')  # prevent the empty set
+
+                    if add_estimate and std_weighted_sum != float('inf'):
                         if len(split_subset_delta_1) > 0:
                             mu1, std1 = norm.fit(split_subset_delta_1)
-                            std_weighted_sum += float(len(split_subset_delta_1)) / len(subset) * std1
+                            std_weighted_sum += float(len(split_subset_delta_1)) / total_length * std1
                         if len(split_subset_delta_2) > 0:
                             mu2, std2 = norm.fit(split_subset_delta_2)
-                            std_weighted_sum += float(len(split_subset_delta_2)) / len(subset) * std2
-                            # TODO: figure out the proper value here
+                            std_weighted_sum += float(len(split_subset_delta_2)) / total_length * std2
 
-                        # TODO: add progressive widening simulation?
-                        self.child_W[subset_index][dim][split_value] = -std_weighted_sum
-                        self.child_N[subset_index][dim][split_value] = 0
+                        for var_index in range(len(self.var_list)):
+                            if var_index != subset_index:
+                                std_weighted_sum += float(len(self.state[var_index])) / total_length * \
+                                                    self.var_list[var_index]
+                        if self.split_var_index_dict.get(-std_weighted_sum) is not None:
+                            self.split_var_index_dict.update({-std_weighted_sum: [(subset_index, dim, split_value)]})
+                        else:
+                            self.split_var_index_dict[std_weighted_sum].append((subset_index, dim, split_value))
+
+                    # TODO: add progressive widening simulation?
+                    self.child_W[subset_index][dim][split_value] = -std_weighted_sum
+                    self.child_N[subset_index][dim][split_value] = 0
+        del self.check_split_state_pair  # release memory
         print('finish expanding a node')
 
     def find_or_add_child(self, best_move_index, subset_index):
@@ -246,79 +293,78 @@ class MCTSNode:
 
         if action not in self.children:
             # Obtain state following given action.
-            new_state = self.TreeEnv.next_state(deepcopy(self.state), action)
+            new_state, new_var_list = self.TreeEnv.next_state(deepcopy(self.state), action,
+                                                              deepcopy(self.var_list))
             new_state_list = mcts_state_to_list(new_state)
-            if self.children_state_pair.get(new_state_list) is not None:
-                action = self.children_state_pair.get(new_state_list)
-            else:
-                self.children_state_pair.update({new_state_list: action})
-                self.children[action] = MCTSNode(new_state, self.n_actions_types,
-                                                 self.TreeEnv,
-                                                 action=action, parent=self)
+            assert self.children_state_pair.get(new_state_list) is None
+            self.children_state_pair.update({new_state_list: action})
+            self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
+                                             TreeEnv=self.TreeEnv, var_list=new_var_list,
+                                             action=action, parent=self)
         return self.children[action]
 
-    def add_virtual_loss(self, up_to):
-        """
-        Propagate a virtual loss up to a given node.
-        :param up_to: The node to propagate until.
-        """
-        self.n_vlosses += 1
-        self.W -= 1
-        if self.parent is None or self is up_to:
-            return
-        self.parent.add_virtual_loss(up_to)
+    # def add_virtual_loss(self, up_to):
+    #     """
+    #     Propagate a virtual loss up to a given node.
+    #     :param up_to: The node to propagate until.
+    #     """
+    #     self.n_vlosses += 1
+    #     self.W -= 1
+    #     if self.parent is None or self is up_to:
+    #         return
+    #     self.parent.add_virtual_loss(up_to)
+    #
+    # def revert_virtual_loss(self, up_to):
+    #     """
+    #     Undo adding virtual loss.
+    #     :param up_to: The node to propagate until.
+    #     """
+    #     self.n_vlosses -= 1
+    #     self.W += 1
+    #     if self.parent is None or self is up_to:
+    #         return
+    #     self.parent.revert_virtual_loss(up_to)
 
-    def revert_virtual_loss(self, up_to):
-        """
-        Undo adding virtual loss.
-        :param up_to: The node to propagate until.
-        """
-        self.n_vlosses -= 1
-        self.W += 1
-        if self.parent is None or self is up_to:
-            return
-        self.parent.revert_virtual_loss(up_to)
+    # def revert_visits(self, up_to):
+    #     """
+    #     Revert visit increments.
+    #     Sometimes, repeated calls to select_leaf return the same node.
+    #     This is rare and we're okay with the wasted computation to evaluate
+    #     the position multiple times by the dual_net. But select_leaf has the
+    #     side effect of incrementing visit counts. Since we want the value to
+    #     only count once for the repeatedly selected node, we also have to
+    #     revert the incremented visit counts.
+    #     :param up_to: The node to propagate until.
+    #     """
+    #     self.N -= 1
+    #     if self.parent is None or self is up_to:
+    #         return
+    #     self.parent.revert_visits(up_to)
 
-    def revert_visits(self, up_to):
-        """
-        Revert visit increments.
-        Sometimes, repeated calls to select_leaf return the same node.
-        This is rare and we're okay with the wasted computation to evaluate
-        the position multiple times by the dual_net. But select_leaf has the
-        side effect of incrementing visit counts. Since we want the value to
-        only count once for the repeatedly selected node, we also have to
-        revert the incremented visit counts.
-        :param up_to: The node to propagate until.
-        """
-        self.N -= 1
-        if self.parent is None or self is up_to:
-            return
-        self.parent.revert_visits(up_to)
-
-    def incorporate_estimates(self, action_probs, value, up_to):
-        """
-        Call if the node has just been expanded via `select_leaf` to
-        incorporate the prior action probabilities and state value estimated
-        by the neural network.
-        :param action_probs: Action probabilities for the current node's state
-        predicted by the neural network.
-        :param value: Value of the current node's state predicted by the neural
-        network.
-        :param up_to: The node to propagate until.
-        """
-        # A done node (i.e. episode end) should not go through this code path.
-        # Rather it should directly call `backup_value` on the final node.
-        # TODO: Add assert here
-        # Another thread already expanded this node in the meantime.
-        # Ignore wasted computation but correct visit counts.
-        if self.is_expanded:
-            self.revert_visits(up_to=up_to)
-            return
-        self.original_prior = self.child_prior = action_probs
-        # This is a deviation from the paper that led to better results in
-        # practice (following the MiniGo implementation).
-        self.child_W = np.ones([self.n_actions], dtype=np.float32) * value
-        self.backup_value(value, up_to=up_to)
+    # def incorporate_estimates(self, action_probs, value, up_to):
+    #     """
+    #     Call if the node has just been expanded via `select_leaf` to
+    #     incorporate the prior action probabilities and state value estimated
+    #     by the neural network.
+    #     :param action_probs: Action probabilities for the current node's state
+    #     predicted by the neural network.
+    #     :param value: Value of the current node's state predicted by the neural
+    #     network.
+    #     :param up_to: The node to propagate until.
+    #     """
+    #     # A done node (i.e. episode end) should not go through this code path.
+    #     # Rather it should directly call `backup_value` on the final node.
+    #     # TODO: Add assert here
+    #     # Another thread already expanded this node in the meantime.
+    #     # Ignore wasted computation but correct visit counts.
+    #     if self.is_expanded:
+    #         self.revert_visits(up_to=up_to)
+    #         return
+    #     self.original_prior = self.child_prior = action_probs
+    #     # This is a deviation from the paper that led to better results in
+    #     # practice (following the MiniGo implementation).
+    #     self.child_W = np.ones([self.n_actions], dtype=np.float32) * value
+    #     self.backup_value(value, up_to=up_to)
 
     def backup_value(self, value, up_to):
         """
@@ -334,21 +380,21 @@ class MCTSNode:
     def is_done(self):
         return self.TreeEnv.is_done_state(self.state, self.depth)
 
-    def inject_noise(self):
-        dirch = np.random.dirichlet([D_NOISE_ALPHA] * self.n_actions)
-        self.child_prior = self.child_prior * 0.75 + dirch * 0.25
-
-    def visits_as_probs(self, squash=False):
-        """
-        Returns the child visit counts as a probability distribution.
-        :param squash: If True, exponentiate the probabilities by a temperature
-        slightly large than 1 to encourage diversity in early steps.
-        :return: Numpy array of shape (n_actions).
-        """
-        probs = self.child_N
-        if squash:
-            probs = probs ** .95
-        return probs / np.sum(probs)
+    # def inject_noise(self):
+    #     dirch = np.random.dirichlet([D_NOISE_ALPHA] * self.n_actions)
+    #     self.child_prior = self.child_prior * 0.75 + dirch * 0.25
+    #
+    # def visits_as_probs(self, squash=False):
+    #     """
+    #     Returns the child visit counts as a probability distribution.
+    #     :param squash: If True, exponentiate the probabilities by a temperature
+    #     slightly large than 1 to encourage diversity in early steps.
+    #     :return: Numpy array of shape (n_actions).
+    #     """
+    #     probs = self.child_N
+    #     if squash:
+    #         probs = probs ** .95
+    #     return probs / np.sum(probs)
 
     def print_tree(self, level=0):
         return_value = self.TreeEnv.get_return(self.state, self.depth)
@@ -395,9 +441,9 @@ class MCTS:
         self.root = None
 
     def initialize_search(self, data):
-        init_state = self.TreeEnv.initial_state(data)
+        init_state, init_var_list = self.TreeEnv.initial_state(data)
         n_action_types = self.TreeEnv.n_action_types
-        self.root = MCTSNode(init_state, n_action_types, self.TreeEnv)
+        self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list)
 
         self.qs = []
         self.rewards = []
@@ -419,7 +465,7 @@ class MCTS:
 
         while len(leaves) < num_parallel:
             # print("_"*50)
-            leaf = self.root.select_leaf(current=self.root, reference_data=self.data_all)
+            leaf = self.root.select_leaf(reference_data=self.data_all)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
             leaf.backup_value(value, up_to=self.root)
             # Discourage other threads to take the same trajectory via virtual loss
@@ -430,7 +476,7 @@ class MCTS:
         #     for leaf in leaves:
         #         leaf.revert_virtual_loss(up_to=self.root)
         #         # leaf.incorporate_estimates(action_prob, value, up_to=self.root)
-        self.root.print_tree()
+        # self.root.print_tree()
         return leaves
 
     def pick_action(self):
@@ -496,7 +542,7 @@ def execute_episode(num_simulations, TreeEnv, data):
             mcts.tree_search()
             current_simulations = mcts.root.parent.child_N[None]
 
-        # mcts_learner.root.print_tree()
+        mcts.root.print_tree()
         # print("_"*100)
 
         action = mcts.pick_action()
