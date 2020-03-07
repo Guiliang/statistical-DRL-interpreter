@@ -1,8 +1,3 @@
-"""
-Adapted from https://github.com/tensorflow/minigo/blob/master/mcts.py
-Implementation of the Monte-Carlo tree search algorithm as detailed in the
-AlphaGo Zero paper (https://www.nature.com/articles/nature24270).
-"""
 import math
 import random as rd
 import collections
@@ -34,11 +29,11 @@ class DummyNode:
         self.child_N = collections.defaultdict(float)
         self.child_W = collections.defaultdict(float)
 
-    def revert_virtual_loss(self, up_to=None): pass
-
-    def add_virtual_loss(self, up_to=None): pass
-
-    def revert_visits(self, up_to=None): pass
+    # def revert_virtual_loss(self, up_to=None): pass
+    #
+    # def add_virtual_loss(self, up_to=None): pass
+    #
+    # def revert_visits(self, up_to=None): pass
 
     def backup_value(self, value, up_to=None): pass
 
@@ -56,8 +51,7 @@ class MCTSNode:
         state. Equal to the number of outgoing edges of the node.
         :param TreeEnv: Static class that defines the environment dynamics,
         e.g. which state follows from another state when performing an action.
-        :param action: Index of the action that led from the parent node to
-        this node.
+        :param action: the action (split) in our Monte Carlo Regression Tree
         :param parent: Parent node.
         """
         self.var_list = var_list
@@ -148,17 +142,21 @@ class MCTSNode:
     def child_Q(self, subset_number):
         child_Q_return = []
         for dim in range(self.n_actions_types):
-            child_W_subdim = np.asarray(list(self.child_W[subset_number][dim].values()))
-            child_N_subdim = np.asarray(list(self.child_N[subset_number][dim].values()))
-            child_Q_return.append(child_W_subdim / (1 + child_N_subdim))
+            child_W_subdim = []
+            child_N_subdim = []
+            for split_values in sorted(self.child_W[subset_number][dim].keys()):
+                child_W_subdim.append(self.child_W[subset_number][dim][split_values])
+                child_N_subdim.append(self.child_N[subset_number][dim][split_values])
+            child_Q_return.append(np.asarray(child_W_subdim) / (1 + np.asarray(child_N_subdim)))
         return child_Q_return
 
     def child_U(self, subset_number):
-        # TODO: need to be fixed
         child_U_return = []
         for dim in range(self.n_actions_types):
-            child_N_subdim = np.asarray(list(self.child_N[subset_number][dim].values()))
-            child_U_return.append(c_PUCT * np.sqrt(math.log(1 + self.N) / (1 + child_N_subdim)))
+            child_N_subdim = []
+            for split_values in sorted(self.child_W[subset_number][dim].keys()):
+                child_N_subdim.append(self.child_N[subset_number][dim][split_values])
+            child_U_return.append(c_PUCT * np.sqrt(math.log(1 + self.N) / (1 + np.asarray(child_N_subdim))))
         return child_U_return
 
     def child_action_score(self, subset_number):
@@ -173,47 +171,54 @@ class MCTSNode:
             child_action_score_return.append(child_Q[dim] + child_U[dim])
         return child_action_score_return
 
-    def select_leaf(self, k=100, reference_data=None):
+    def select_leaf(self, k=10, dim_per_split=100, reference_data=None):
         current = self
         while True:
             current.N += 1
             # Encountered leaf node (i.e. node that is not yet expanded).
             if not current.is_expanded:
                 if reference_data is not None:
-                    current.select_expand_action(dim_per_split=100, reference_data=reference_data,
+                    current.select_expand_action(dim_per_split=dim_per_split, reference_data=reference_data,
                                                  add_estimate=True)
                     # TODO write progressive widening for k
                 break
-            best_value_list = []
-            best_index_list = []
+
+            topK_value_index_list = []
+            for split_value in sorted(current.split_var_index_dict.keys(), reverse=True):
+                if len(topK_value_index_list) < k:
+                    topK_value_index_list += current.split_var_index_dict.get(split_value)
+
+            child_action_score_all = np.ones([len(current.state), self.n_actions_types, dim_per_split]) * float('-inf')
             for j in range(len(current.state)):
                 # if current.subset_split_flag[j]:
                 child_action_score = current.child_action_score(subset_number=j)
                 child_action_score = np.asarray(child_action_score)
-                best_move_index = np.unravel_index(child_action_score.argmax(), child_action_score.shape)
-                best_value_list.append(child_action_score[best_move_index])
-                best_index_list.append(best_move_index)
-                # else:
-                #     best_value_list.append(float('-inf'))
-                #     best_index_list.append(None)
-            best_subset_index = np.asarray(best_value_list).argmax()
-            current = current.find_or_add_child(best_move_index=best_index_list[best_subset_index],
-                                                subset_index=best_subset_index)
+                action_score_shape = child_action_score.shape
+                child_action_score_all[j, :action_score_shape[0], :action_score_shape[1]] = child_action_score
+
+            topK_action_score = [child_action_score_all[topK_value_index] for topK_value_index in topK_value_index_list]
+            best_move_index = topK_value_index_list[np.argmax(topK_action_score)]
+            best_subset_index = best_move_index[0]
+            best_dim_index = best_move_index[1]
+            best_split_value = sorted(current.child_W[best_subset_index][best_dim_index].keys())[best_move_index[2]]
+            # best_move_index = np.unravel_index(child_action_score_all.argmax(), child_action_score_all.shape)
+            action = "{0}_{1}_{2}".format(str(best_subset_index), str(best_dim_index), str(best_split_value))
+            current = current.find_or_add_child(action=action)
         return current
 
     def select_expand_action(self, dim_per_split, reference_data, add_estimate=False):
         """
-        :param dim_per_split: the number of actions to be explore, k should be decide by progressive widening.
+        explore the possible split for each node and add greedy estimate (like the normal decision tree)
+        :param dim_per_split: the number of split testes for each latent dimension
+        :param reference_data: the data to be split
+        :param add_estimate: 1/0 flag to decide whether to add the estimates
+        :return:
         """
 
-        total_length = 0
-        for subset in self.state:
-            total_length += len(subset)
-
+        total_length = len(reference_data)
         self.is_expanded = True
         split_dimension = self.n_actions_types
         for subset_index in range(len(self.state)):
-            # if self.subset_split_flag[subset_index]:  # empty set requires no split
             subset = self.state[subset_index]
             subset_data = None
             for data_index in subset:
@@ -227,6 +232,7 @@ class MCTSNode:
                 split_values = np.sort(subset_data[:, dim])
                 split_gap = len(split_values) / dim_per_split
                 for split_index in range(dim_per_split):
+                    skip_flag = False
                     split_value = round(float(split_values[int(split_index * split_gap)]), 6)
                     std_weighted_sum = float(0)
 
@@ -234,7 +240,7 @@ class MCTSNode:
                     split_subset_delta_1 = []
                     split_subset_2 = []
                     split_subset_delta_2 = []
-                    for i in range(len(subset)):
+                    for i in range(len(subset)):  # create subsplit
                         if subset_data[i, dim] < split_value:
                             split_subset_1.append(subset[i])
                             split_subset_delta_1.append(reference_data[subset[i]][-1])
@@ -243,7 +249,7 @@ class MCTSNode:
                             split_subset_delta_2.append(reference_data[subset[i]][-1])
 
                     new_state = []
-                    for state_index in range(len(self.state)):
+                    for state_index in range(len(self.state)):  # generate new state
                         if state_index == subset_index:
                             new_state.append(split_subset_1)
                             new_state.append(split_subset_2)
@@ -256,15 +262,18 @@ class MCTSNode:
                     if self.check_split_state_pair.get(new_state_list) is not None:
                         action = self.check_split_state_pair.get(new_state_list)
                         if action_new != action:
-                            std_weighted_sum = float('inf')  # prevent the duplicated split
+                            # prevent the duplicated split (different split methods but have the same state)
+                            std_weighted_sum = float('inf')
+                        else:
+                            skip_flag = True
                     else:
                         self.check_split_state_pair.update({new_state_list: action_new})
 
                     if len(split_subset_1) == 0 or len(split_subset_2) == 0:
                         std_weighted_sum = float('inf')  # prevent the empty set
 
-                    if add_estimate and std_weighted_sum != float('inf'):
-                        if len(split_subset_delta_1) > 0:
+                    if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
+                        if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
                             mu1, std1 = norm.fit(split_subset_delta_1)
                             std_weighted_sum += float(len(split_subset_delta_1)) / total_length * std1
                         if len(split_subset_delta_2) > 0:
@@ -275,21 +284,29 @@ class MCTSNode:
                             if var_index != subset_index:
                                 std_weighted_sum += float(len(self.state[var_index])) / total_length * \
                                                     self.var_list[var_index]
-                        if self.split_var_index_dict.get(-std_weighted_sum) is not None:
-                            self.split_var_index_dict.update({-std_weighted_sum: [(subset_index, dim, split_value)]})
-                        else:
-                            self.split_var_index_dict[std_weighted_sum].append((subset_index, dim, split_value))
+                    if not skip_flag:
+                        self.child_N[subset_index][dim][split_value] = 0
+                        self.child_W[subset_index][dim][split_value] = -std_weighted_sum
 
-                    # TODO: add progressive widening simulation?
-                    self.child_W[subset_index][dim][split_value] = -std_weighted_sum
-                    self.child_N[subset_index][dim][split_value] = 0
+                    if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
+                        # the sequence of split value is from small to large
+                        split_value_index = sorted(self.child_W[subset_index][dim]).index(split_value)
+                        if self.split_var_index_dict.get(-std_weighted_sum) is None:
+                            self.split_var_index_dict.update(
+                                {-std_weighted_sum: [(subset_index, dim, split_value_index)]})
+                        else:
+                            self.split_var_index_dict.get(-std_weighted_sum).append(
+                                (subset_index, dim, split_value_index))
+
         del self.check_split_state_pair  # release memory
         print('finish expanding a node')
 
-    def find_or_add_child(self, best_move_index, subset_index):
-        best_split_dim = best_move_index[0]
-        best_split_value = list(self.child_N[subset_index][best_move_index[0]].keys())[best_move_index[1]]
-        action = "{0}_{1}_{2}".format(str(subset_index), str(best_split_dim), str(best_split_value))
+    def find_or_add_child(self, action):
+        """
+        find the children node or add new node
+        :param action: the selected action in format "subset_dim_splitvalue"
+        :return:
+        """
 
         if action not in self.children:
             # Obtain state following given action.
