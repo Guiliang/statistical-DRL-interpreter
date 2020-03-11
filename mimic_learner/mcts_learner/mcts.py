@@ -423,13 +423,14 @@ class MCTSNode:
     #         probs = probs ** .95
     #     return probs / np.sum(probs)
 
-    def print_tree(self, level=0):
+    def print_tree(self, writer, level=0):
         return_value = self.TreeEnv.get_return(self.state, self.depth)
         node_string = "\033[94m|" + "----" * level
         node_string += "Node: action={0}, N={1}, Q={2}, " \
                        "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
         node_string += ",state:{}".format(self.state)
         print(node_string)
+        writer.write(node_string)
         for _, child in sorted(self.children.items()):
             child.print_tree(level + 1)
 
@@ -542,7 +543,7 @@ class MCTS:
         del self.root.parent.children
 
 
-def execute_episode(num_simulations, TreeEnv, data):
+def execute_episode(num_simulations, TreeEnv, data, tree_writer):
     """
     Executes a single episode of the task using Monte-Carlo tree search with
     the given agent network. It returns the experience tuples collected during
@@ -570,7 +571,7 @@ def execute_episode(num_simulations, TreeEnv, data):
             mcts.tree_search(original_var=mcts.original_var)
             current_simulations = mcts.root.parent.child_N[None]
 
-        mcts.root.print_tree()
+        mcts.root.print_tree(tree_writer)
         # print("_"*100)
 
         action = mcts.pick_action()
