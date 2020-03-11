@@ -430,7 +430,7 @@ class MCTSNode:
                        "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
         node_string += ",state:{}".format(self.state)
         print(node_string)
-        writer.write(node_string)
+        writer.write(node_string+"\n")
         for _, child in sorted(self.children.items()):
             child.print_tree(level + 1)
 
