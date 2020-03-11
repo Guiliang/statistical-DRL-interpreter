@@ -10,7 +10,7 @@ from scipy.stats import norm
 # Exploration constant
 from utils.memory_utils import mcts_state_to_list
 
-c_PUCT = 1.38
+c_PUCT = 0.005  # 1.38
 # Dirichlet noise alpha parameter.
 D_NOISE_ALPHA = 0.03
 # Number of steps into the episode after which we always select the
@@ -54,7 +54,7 @@ class MCTSNode:
         :param action: the action (split) in our Monte Carlo Regression Tree
         :param parent: Parent node.
         """
-        self.var_list = var_list
+        self.var_list = var_list  # record the variance of each subset
         self.TreeEnv = TreeEnv
         if parent is None:
             self.depth = 0
@@ -66,9 +66,9 @@ class MCTSNode:
         self.state = state
         self.n_actions_types = n_actions_types
         self.children = {}
-        self.children_state_pair = {}  # to prevent duplicated split resulting the same state
-        self.check_split_state_pair = {}
-        self.split_var_index_dict = {}
+        self.children_state_pair = {}  # to prevent duplicated split resulting the same state (could be removed)
+        self.check_split_state_pair = {}  # applied during select_expand_action(), will be clean each time
+        self.split_var_index_dict = {}  # for progressive widening
         self.n_vlosses = 0
 
         # self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
@@ -171,7 +171,7 @@ class MCTSNode:
             child_action_score_return.append(child_Q[dim] + child_U[dim])
         return child_action_score_return
 
-    def select_leaf(self, k=10, dim_per_split=100, reference_data=None):
+    def select_leaf(self, k=5, dim_per_split=100, reference_data=None, original_var=None):
         current = self
         while True:
             current.N += 1
@@ -179,7 +179,8 @@ class MCTSNode:
             if not current.is_expanded:
                 if reference_data is not None:
                     current.select_expand_action(dim_per_split=dim_per_split, reference_data=reference_data,
-                                                 add_estimate=True)
+                                                 original_var=original_var,
+                                                 add_estimate=True, apply_global_variance=True)
                     # TODO write progressive widening for k
                 break
 
@@ -206,7 +207,8 @@ class MCTSNode:
             current = current.find_or_add_child(action=action)
         return current
 
-    def select_expand_action(self, dim_per_split, reference_data, add_estimate=False):
+    def select_expand_action(self, dim_per_split, reference_data, original_var, add_estimate=False,
+                             apply_global_variance=False):
         """
         explore the possible split for each node and add greedy estimate (like the normal decision tree)
         :param dim_per_split: the number of split testes for each latent dimension
@@ -280,13 +282,21 @@ class MCTSNode:
                             mu2, std2 = norm.fit(split_subset_delta_2)
                             std_weighted_sum += float(len(split_subset_delta_2)) / total_length * std2
 
-                        for var_index in range(len(self.var_list)):
-                            if var_index != subset_index:
-                                std_weighted_sum += float(len(self.state[var_index])) / total_length * \
-                                                    self.var_list[var_index]
+                        if not apply_global_variance:
+                            weight_std_reduction = len(subset) / total_length * self.var_list[
+                                subset_index] - std_weighted_sum
+                        else:
+
+                            for var_index in range(len(self.var_list)):
+                                if var_index != subset_index:
+                                    std_weighted_sum += float(len(self.state[var_index])) / total_length * \
+                                                        self.var_list[var_index]
+                            weight_std_reduction = original_var - std_weighted_sum
+                    else:
+                        weight_std_reduction = -std_weighted_sum
                     if not skip_flag:
                         self.child_N[subset_index][dim][split_value] = 0
-                        self.child_W[subset_index][dim][split_value] = -std_weighted_sum
+                        self.child_W[subset_index][dim][split_value] = weight_std_reduction
 
                     if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
                         # the sequence of split value is from small to large
@@ -416,8 +426,8 @@ class MCTSNode:
     def print_tree(self, level=0):
         return_value = self.TreeEnv.get_return(self.state, self.depth)
         node_string = "\033[94m|" + "----" * level
-        node_string += "Node: action={0}, N={1}, W={2}, " \
-                       "return={3}|\033[0m".format(self.action, self.N, round(self.W, 6), round(return_value, 6))
+        node_string += "Node: action={0}, N={1}, Q={2}, " \
+                       "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
         node_string += ",state:{}".format(self.state)
         print(node_string)
         for _, child in sorted(self.children.items()):
@@ -456,18 +466,19 @@ class MCTS:
         self.data_all = data
 
         self.root = None
+        self.original_var = None
 
     def initialize_search(self, data):
         init_state, init_var_list = self.TreeEnv.initial_state(data)
         n_action_types = self.TreeEnv.n_action_types
         self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list)
-
+        self.original_var = init_var_list[0]
         self.qs = []
         self.rewards = []
         self.searches_pi = []
         self.obs = []
 
-    def tree_search(self, num_parallel=None):
+    def tree_search(self, original_var, num_parallel=None):
         """
         Performs multiple simulations in the tree (following trajectories)
         until a given amount of leaves to expand have been encountered.
@@ -482,7 +493,7 @@ class MCTS:
 
         while len(leaves) < num_parallel:
             # print("_"*50)
-            leaf = self.root.select_leaf(reference_data=self.data_all)
+            leaf = self.root.select_leaf(reference_data=self.data_all, original_var=original_var)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
             leaf.backup_value(value, up_to=self.root)
             # Discourage other threads to take the same trajectory via virtual loss
@@ -556,7 +567,7 @@ def execute_episode(num_simulations, TreeEnv, data):
         current_simulations = 0
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
-            mcts.tree_search()
+            mcts.tree_search(original_var=mcts.original_var)
             current_simulations = mcts.root.parent.child_N[None]
 
         mcts.root.print_tree()
