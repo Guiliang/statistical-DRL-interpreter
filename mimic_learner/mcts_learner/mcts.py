@@ -10,6 +10,7 @@ from scipy.stats import norm
 # import warnings
 # warnings.filterwarnings("error")
 # Exploration constant
+from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list
 
 c_PUCT = 0.005  # 1.38
@@ -582,38 +583,68 @@ class MCTS:
         del self.root.parent.children
 
 
-def iterative_merge_nodes(merged_node, thread_node, level):
+def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
     update_sum = 0
     for s_index in range(level):
         assert len(merged_node.child_N) == level
         assert len(thread_node.child_N) == level
         for dim in range(merged_node.n_actions_types):
             for action in thread_node.child_N[s_index][dim].keys():
+                W_sum = 0
+                N_sum = 0
                 if action in merged_node.child_N[s_index][dim].keys():
-                    W_sum = 0
                     if thread_node.child_N[s_index][dim][action] > 0:
                         W_sum += float(thread_node.child_W[s_index][dim][action])
+                        N_sum += thread_node.child_N[s_index][dim][action]
                     if merged_node.child_N[s_index][dim][action] > 0:
                         W_sum += float(merged_node.child_W[s_index][dim][action])
+                        N_sum += merged_node.child_N[s_index][dim][action]
+                    if origin_node is not None:
+                        if action in origin_node.child_N[s_index][dim].keys():
+                            if origin_node.child_N[s_index][dim][action] > 0:
+                                W_sum -= float(origin_node.child_W[s_index][dim][action])
+                                N_sum -= origin_node.child_N[s_index][dim][action]
                     if W_sum > 0:
                         merged_node.child_W[s_index][dim][action] = W_sum
-                    merged_node.child_N[s_index][dim][action] += thread_node.child_N[s_index][dim][action]
+                    if N_sum > 0:
+                        merged_node.child_N[s_index][dim][action] = N_sum
                 else:
-                    merged_node.child_N[s_index][dim][action] = thread_node.child_N[s_index][dim][action]
-                    merged_node.child_W[s_index][dim][action] = thread_node.child_W[s_index][dim][action]
-
+                    W_sum += thread_node.child_W[s_index][dim][action]
+                    N_sum += thread_node.child_N[s_index][dim][action]
+                    if origin_node is not None:
+                        if action in origin_node.child_N[s_index][dim].keys():
+                            if origin_node.child_N[s_index][dim][action] > 0:
+                                W_sum -= float(origin_node.child_W[s_index][dim][action])
+                                N_sum -= origin_node.child_N[s_index][dim][action]
+                    merged_node.child_W[s_index][dim][action] = W_sum
+                    merged_node.child_N[s_index][dim][action] = N_sum
+    if origin_node is not None:
+        all(map(thread_node.children_state_pair.pop, origin_node.children_state_pair))
     merged_node.children_state_pair.update(thread_node.children_state_pair)
-    merged_node.split_var_index_dict.update(thread_node.split_var_index_dict)
+    if origin_node is not None:
+        handle_dict_list(thread_node.split_var_index_dict, origin_node.split_var_index_dict, option='substract')
+    handle_dict_list(merged_node.split_var_index_dict, thread_node.split_var_index_dict, option='add')
+
     for thread_child_action in thread_node.children.keys():
         if thread_child_action in merged_node.children.keys():
-            update_sum += iterative_merge_nodes(merged_node.children[thread_child_action],
-                                                thread_node.children[thread_child_action], level + 1)
+            origin_node_child = None
+            if origin_node is not None:
+                if thread_child_action in origin_node.children.keys():
+                    origin_node_child = origin_node.children[thread_child_action]
+                else:
+                    print('omg')
+            update_sum += iterative_handle_nodes(merged_node.children[thread_child_action],
+                                                 thread_node.children[thread_child_action],
+                                                 origin_node_child,
+                                                 level + 1)
         else:
+            if origin_node is not None:
+                assert thread_child_action not in origin_node.children.keys()
             merged_node.children[thread_child_action] = thread_node[thread_child_action]
     return update_sum + 1
 
 
-def merge_mcts(mcts_threads):
+def merge_mcts(mcts_threads, mcts_origin):
     mcts_merged = mcts_threads[0]
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
@@ -622,12 +653,14 @@ def merge_mcts(mcts_threads):
     for i in range(1, len(mcts_threads)):
         merged_node = mcts_merged.root.parent
         thread_node = mcts_threads[i].root.parent
+        origin_node = mcts_origin.root.parent
         level = 0
         for action in thread_node.child_N.keys():
-            merged_node.child_W[action] = float(thread_node.child_W[action] + merged_node.child_W[action])
+            merged_node.child_W[action] = float(
+                thread_node.child_W[action] + merged_node.child_W[action] - origin_node.child_W[action])
             # (thread_node.child_N[action] + merged_node.child_N[action])
-            merged_node.child_N[action] += thread_node.child_N[action]
-        update_sum = iterative_merge_nodes(mcts_merged.root, mcts_threads[i].root, level + 1)
+            merged_node.child_N[action] += (thread_node.child_N[action] - origin_node.child_N[action])
+        update_sum = iterative_handle_nodes(mcts_merged.root, mcts_threads[i].root, mcts_origin.root, level + 1)
         # print(mcts_threads[i].root.Q)
         # print(list(mcts_merged.root.children.keys())[0])
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
@@ -635,8 +668,10 @@ def merge_mcts(mcts_threads):
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
     print("update_sum is {0}".format(update_sum))
     mcts_threads_new = [deepcopy(mcts_merged) for i in range(0, len(mcts_threads))]
+    mcts_origin_new = deepcopy(mcts_merged)
     del mcts_threads
-    return mcts_threads_new
+    del mcts_origin
+    return mcts_threads_new, mcts_origin_new
 
 
 def execute_episode(num_simulations, TreeEnv, tree_writer):
@@ -661,6 +696,8 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
         mcts_thread = MCTS(TreeEnv)
         mcts_thread.initialize_search()
         mcts_threads.append(mcts_thread)
+    mcts_origin = MCTS(TreeEnv)
+    mcts_origin.initialize_search()
 
     while True:
         pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
@@ -673,7 +710,7 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
                 results.append(pool.apply_async(mcts_threads[i].tree_search,
                                                 args=(mcts_threads[i].original_var, avg_timer_record)))
             mcts_threads = [p.get() for p in results]
-            mcts_threads = merge_mcts(mcts_threads)
+            mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin)
             end_time = time.time()
             print('multithread time is {0}'.format(str(end_time - start_time)))
             current_simulations = mcts_threads[0].root.parent.child_N[None]
