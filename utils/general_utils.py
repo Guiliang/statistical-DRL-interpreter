@@ -139,3 +139,21 @@ def grid2gif(image_str, output_gif, delay=100):
     """
     str1 = 'convert -delay ' + str(delay) + ' -loop 0 ' + image_str + ' ' + output_gif
     subprocess.call(str1, shell=True)
+
+
+def handle_dict_list(dict_list_A, dict_list_B, option):
+    for key in dict_list_B.keys():
+        list_B = dict_list_B.get(key)
+        if key in dict_list_A.keys():
+            list_A = dict_list_A.get(key)
+            if option == 'add':
+                list_new = list_A + list(set(list_A) - set(list_B))
+            elif option == 'substract':
+                list_new = list(set(list_A) - set(list_B))
+            else:
+                raise ValueError('unknown option {0}'.format(option))
+            dict_list_A[key] = list_new
+        else:
+            if option == 'add':
+                dict_list_A[key] = list_B
+    return dict_list_A

@@ -73,6 +73,7 @@ class FlappyBirdConfig(object):
         class Learn(InitWithDict):
             num_simulations = None
             replay_memory_size = None
+            episodic_sample_number = None
 
     @staticmethod
     def load(file_path):
