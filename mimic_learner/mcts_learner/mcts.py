@@ -1,8 +1,10 @@
 import math
+import time
 import random as rd
 import collections
 from copy import deepcopy
-
+from queue import Queue
+import multiprocessing as mp
 import numpy as np
 from scipy.stats import norm
 # import warnings
@@ -69,7 +71,6 @@ class MCTSNode:
         self.children_state_pair = {}  # to prevent duplicated split resulting the same state (could be removed)
         self.check_split_state_pair = {}  # applied during select_expand_action(), will be clean each time
         self.split_var_index_dict = {}  # for progressive widening
-        self.n_vlosses = 0
 
         # self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
         for j in range(len(state)):
@@ -139,6 +140,16 @@ class MCTSNode:
         """
         return self.W / (1 + self.N)
 
+    @property
+    def U(self):
+        """
+        Returns the current U of the node.
+        """
+        if self.action is not None:
+            return c_PUCT * np.sqrt(math.log(self.parent.N + 1) / (1 + self.N))
+        else:
+            return float(0)
+
     def child_Q(self, subset_number):
         child_Q_return = []
         for dim in range(self.n_actions_types):
@@ -171,19 +182,28 @@ class MCTSNode:
             child_action_score_return.append(child_Q[dim] + child_U[dim])
         return child_action_score_return
 
-    def select_leaf(self, k=5, dim_per_split=100, reference_data=None, original_var=None):
+    def select_leaf(self, k=5, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
+        """
+         {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
+        """
+
         current = self
         while True:
             current.N += 1
             # Encountered leaf node (i.e. node that is not yet expanded).
             if not current.is_expanded:
                 if reference_data is not None:
+                    start_time = time.time()
                     current.select_expand_action(dim_per_split=dim_per_split, reference_data=reference_data,
                                                  original_var=original_var,
                                                  add_estimate=True, apply_global_variance=True)
                     # TODO write progressive widening for k
+                    end_time = time.time()
+                    used_time = end_time - start_time
+                    avg_timer_record.get('expand')[0] += 1
+                    avg_timer_record.get('expand')[1] += used_time
                 break
-
+            start_time = time.time()
             topK_value_index_list = []
             for split_value in sorted(current.split_var_index_dict.keys(), reverse=True):
                 if len(topK_value_index_list) < k:
@@ -202,10 +222,19 @@ class MCTSNode:
             best_subset_index = best_move_index[0]
             best_dim_index = best_move_index[1]
             best_split_value = sorted(current.child_W[best_subset_index][best_dim_index].keys())[best_move_index[2]]
+            end_time = time.time()
+            used_time = end_time - start_time
+            avg_timer_record.get('action_score')[0] += 1
+            avg_timer_record.get('action_score')[1] += used_time
             # best_move_index = np.unravel_index(child_action_score_all.argmax(), child_action_score_all.shape)
             action = "{0}_{1}_{2}".format(str(best_subset_index), str(best_dim_index), str(best_split_value))
+            start_time = time.time()
             current = current.find_or_add_child(action=action)
-        return current
+            end_time = time.time()
+            used_time = end_time - start_time
+            avg_timer_record.get('add_node')[0] += 1
+            avg_timer_record.get('add_node')[1] += used_time
+        return current, avg_timer_record
 
     def select_expand_action(self, dim_per_split, reference_data, original_var, add_estimate=False,
                              apply_global_variance=False):
@@ -423,16 +452,22 @@ class MCTSNode:
     #         probs = probs ** .95
     #     return probs / np.sum(probs)
 
-    def print_tree(self, writer, level=0):
+    def print_tree(self, writer=None, level=0):
         return_value = self.TreeEnv.get_return(self.state, self.depth)
-        node_string = "\033[94m|" + "----" * level
-        node_string += "Node: action={0}, N={1}, Q={2}, " \
-                       "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
-        node_string += ",state:{}".format(self.state)
+        # node_string = "\033[94m|" + "----" * level
+        node_string = "----" * level
+        # node_string += "Node: action={0}, N={1}, Q={2}, " \
+        #                "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
+        node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}|".format(self.action, self.N,
+                                                                                    round(self.Q, 6), round(self.U, 6),
+                                                                                    round(return_value, 6))
+
+        # node_string += ",state:{}".format(self.state)
         print(node_string)
-        writer.write(node_string+"\n")
+        if writer is not None:
+            writer.write(node_string + "\n")
         for _, child in sorted(self.children.items()):
-            child.print_tree(level + 1)
+            child.print_tree(writer, level + 1)
 
 
 class MCTS:
@@ -441,8 +476,8 @@ class MCTS:
     the tree search.
     """
 
-    def __init__(self, TreeEnv, data, seconds_per_move=None,
-                 simulations_per_move=800, num_parallel=8):
+    def __init__(self, TreeEnv, seconds_per_move=None,
+                 simulations_per_move=800, num_parallel=20):
         """
         :param TreeEnv: Static class that defines the environment dynamics,
         e.g. which state follows from another state when performing an action.
@@ -464,13 +499,11 @@ class MCTS:
         self.searches_pi = []
         self.obs = []
 
-        self.data_all = data
-
         self.root = None
         self.original_var = None
 
-    def initialize_search(self, data):
-        init_state, init_var_list = self.TreeEnv.initial_state(data)
+    def initialize_search(self):
+        init_state, init_var_list = self.TreeEnv.initial_state(self.TreeEnv.data_all)
         n_action_types = self.TreeEnv.n_action_types
         self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list)
         self.original_var = init_var_list[0]
@@ -479,7 +512,7 @@ class MCTS:
         self.searches_pi = []
         self.obs = []
 
-    def tree_search(self, original_var, num_parallel=None):
+    def tree_search(self, original_var, avg_timer_record):
         """
         Performs multiple simulations in the tree (following trajectories)
         until a given amount of leaves to expand have been encountered.
@@ -488,25 +521,31 @@ class MCTS:
         evaluate at once. Limits the number of simulations.
         :return: The leaf nodes which were expanded.
         """
-        if num_parallel is None:
-            num_parallel = self.num_parallel
+        # if num_parallel is None:
+        num_parallel = self.num_parallel
         leaves = []
 
         while len(leaves) < num_parallel:
             # print("_"*50)
-            leaf = self.root.select_leaf(reference_data=self.data_all, original_var=original_var)
+            leaf, avg_timer_record = self.root.select_leaf(reference_data=self.TreeEnv.data_all,
+                                                           original_var=original_var,
+                                                           avg_timer_record=avg_timer_record)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
+            start_time = time.time()
             leaf.backup_value(value, up_to=self.root)
+            end_time = time.time()
+            used_time = end_time - start_time
+            avg_timer_record.get('back_up')[0] += 1
+            avg_timer_record.get('back_up')[1] += used_time
             # Discourage other threads to take the same trajectory via virtual loss
             # leaf.add_virtual_loss(up_to=self.root)
             leaves.append(leaf)
         # Evaluate the leaf-states all at once and backup the value estimates.
-        # if leaves:
-        #     for leaf in leaves:
-        #         leaf.revert_virtual_loss(up_to=self.root)
-        #         # leaf.incorporate_estimates(action_prob, value, up_to=self.root)
-        # self.root.print_tree()
-        return leaves
+        # for timer_key in avg_timer_record.keys():
+        #     print("Avg Time of {0} is {1}".
+        #           format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
+        # self.root.print_tree(tree_writer)
+        return self
 
     def pick_action(self):
         """
@@ -543,7 +582,64 @@ class MCTS:
         del self.root.parent.children
 
 
-def execute_episode(num_simulations, TreeEnv, data, tree_writer):
+def iterative_merge_nodes(merged_node, thread_node, level):
+    update_sum = 0
+    for s_index in range(level):
+        assert len(merged_node.child_N) == level
+        assert len(thread_node.child_N) == level
+        for dim in range(merged_node.n_actions_types):
+            for action in thread_node.child_N[s_index][dim].keys():
+                if action in merged_node.child_N[s_index][dim].keys():
+                    W_sum = 0
+                    if thread_node.child_N[s_index][dim][action] > 0:
+                        W_sum += float(thread_node.child_W[s_index][dim][action])
+                    if merged_node.child_N[s_index][dim][action] > 0:
+                        W_sum += float(merged_node.child_W[s_index][dim][action])
+                    if W_sum > 0:
+                        merged_node.child_W[s_index][dim][action] = W_sum
+                    merged_node.child_N[s_index][dim][action] += thread_node.child_N[s_index][dim][action]
+                else:
+                    merged_node.child_N[s_index][dim][action] = thread_node.child_N[s_index][dim][action]
+                    merged_node.child_W[s_index][dim][action] = thread_node.child_W[s_index][dim][action]
+
+    merged_node.children_state_pair.update(thread_node.children_state_pair)
+    merged_node.split_var_index_dict.update(thread_node.split_var_index_dict)
+    for thread_child_action in thread_node.children.keys():
+        if thread_child_action in merged_node.children.keys():
+            update_sum += iterative_merge_nodes(merged_node.children[thread_child_action],
+                                                thread_node.children[thread_child_action], level + 1)
+        else:
+            merged_node.children[thread_child_action] = thread_node[thread_child_action]
+    return update_sum + 1
+
+
+def merge_mcts(mcts_threads):
+    mcts_merged = mcts_threads[0]
+    # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
+    # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
+    # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
+    update_sum = 0
+    for i in range(1, len(mcts_threads)):
+        merged_node = mcts_merged.root.parent
+        thread_node = mcts_threads[i].root.parent
+        level = 0
+        for action in thread_node.child_N.keys():
+            merged_node.child_W[action] = float(thread_node.child_W[action] + merged_node.child_W[action])
+            # (thread_node.child_N[action] + merged_node.child_N[action])
+            merged_node.child_N[action] += thread_node.child_N[action]
+        update_sum = iterative_merge_nodes(mcts_merged.root, mcts_threads[i].root, level + 1)
+        # print(mcts_threads[i].root.Q)
+        # print(list(mcts_merged.root.children.keys())[0])
+        # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
+        # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
+        # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
+    print("update_sum is {0}".format(update_sum))
+    mcts_threads_new = [deepcopy(mcts_merged) for i in range(0, len(mcts_threads))]
+    del mcts_threads
+    return mcts_threads_new
+
+
+def execute_episode(num_simulations, TreeEnv, tree_writer):
     """
     Executes a single episode of the task using Monte-Carlo tree search with
     the given agent network. It returns the experience tuples collected during
@@ -556,23 +652,46 @@ def execute_episode(num_simulations, TreeEnv, data, tree_writer):
     rewards in each step, total return for this episode and the final state of
     this episode.
     """
-    mcts = MCTS(TreeEnv, data)
-    mcts.initialize_search(data)
-
-    # Must run this once at the start, so that noise injection actually affects
-    # the first action of the episode.
-    # first_node = mcts.root.select_leaf()
+    # mcts = MCTS(TreeEnv)
+    # mcts.initialize_search()
+    avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
+    pool = mp.Pool(processes=4)
+    mcts_threads = []
+    for i in range(4):
+        mcts_thread = MCTS(TreeEnv)
+        mcts_thread.initialize_search()
+        mcts_threads.append(mcts_thread)
 
     while True:
-        pre_simulations = mcts.root.N  # dummy node records the total simulation number
+        pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
         current_simulations = 0
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
-            mcts.tree_search(original_var=mcts.original_var)
-            current_simulations = mcts.root.parent.child_N[None]
+            start_time = time.time()
+            results = []
+            for i in range(4):
+                results.append(pool.apply_async(mcts_threads[i].tree_search,
+                                                args=(mcts_threads[i].original_var, avg_timer_record)))
+            mcts_threads = [p.get() for p in results]
+            mcts_threads = merge_mcts(mcts_threads)
+            end_time = time.time()
+            print('multithread time is {0}'.format(str(end_time - start_time)))
+            current_simulations = mcts_threads[0].root.parent.child_N[None]
+            print('current simulations number is {0}'.format(current_simulations))
+            # start_time = time.time()
+            # for i in range(4):
+            #     mcts.tree_search(original_var=mcts.original_var, avg_timer_record=avg_timer_record)
+            # current_simulations = mcts.root.parent.child_N[None]
+            # end_time = time.time()
+            # print('singlethread time is {0}'.format(str(end_time - start_time)))
+            # break
 
+        for timer_key in avg_timer_record.keys():
+            print("Avg Time of {0} is {1}".
+                  format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
         mcts.root.print_tree(tree_writer)
         # print("_"*100)
+        break
 
         action = mcts.pick_action()
         mcts.take_action(action)
@@ -580,12 +699,12 @@ def execute_episode(num_simulations, TreeEnv, data, tree_writer):
         if mcts.root.is_done():
             break
 
-    # Computes the returns at each step from the list of rewards obtained at
-    # each step. The return is the sum of rewards obtained *after* the step.
-    ret = [TreeEnv.get_return(mcts.root.state, mcts.root.depth) for _
-           in range(len(mcts.rewards))]
-
-    total_rew = np.sum(mcts.rewards)
-
-    obs = np.concatenate(mcts.obs)
-    return (obs, mcts.searches_pi, ret, total_rew, mcts.root.state)
+    # # Computes the returns at each step from the list of rewards obtained at
+    # # each step. The return is the sum of rewards obtained *after* the step.
+    # ret = [TreeEnv.get_return(mcts.root.state, mcts.root.depth) for _
+    #        in range(len(mcts.rewards))]
+    #
+    # total_rew = np.sum(mcts.rewards)
+    #
+    # obs = np.concatenate(mcts.obs)
+    # return (obs, mcts.searches_pi, ret, total_rew, mcts.root.state)

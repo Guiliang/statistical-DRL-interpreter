@@ -79,12 +79,11 @@ class MimicLearner():
 
     def train_mimic_model(self):
 
-        with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H:%M')), 'w') as tree_writer:
+        with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')), 'w') as tree_writer:
             for episode_number in range(1, 100):
                 self.data_loader(episode_number)
                 self.mimic_env.add_data(self.memory)
 
                 execute_episode(num_simulations=self.num_simulations,
                                 TreeEnv=self.mimic_env,
-                                data=self.memory,
                                 tree_writer=tree_writer)
