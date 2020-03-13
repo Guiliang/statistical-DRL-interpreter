@@ -1,9 +1,11 @@
+import os
+from datetime import datetime
 import math
+import pickle
 import time
 import random as rd
 import collections
 from copy import deepcopy
-from queue import Queue
 import multiprocessing as mp
 import numpy as np
 from scipy.stats import norm
@@ -15,7 +17,7 @@ from utils.memory_utils import mcts_state_to_list
 
 c_PUCT = 0.005  # 1.38
 # Dirichlet noise alpha parameter.
-D_NOISE_ALPHA = 0.03
+NOISE_VAR = 0.0001  # 0.0001 to 0.00005
 # Number of steps into the episode after which we always select the
 # action with highest action probability rather than selecting randomly
 TEMP_THRESHOLD = 5
@@ -47,7 +49,7 @@ class MCTSNode:
     environment state.
     """
 
-    def __init__(self, state, n_actions_types, TreeEnv, var_list, action=None, parent=None):
+    def __init__(self, state, n_actions_types, TreeEnv, var_list, random_seed, action=None, parent=None):
         """
         :param state: State that the node should hold.
         :param n_actions_types: Number of actions that can be performed in each
@@ -87,6 +89,7 @@ class MCTSNode:
             #     self.child_N.append(None)
 
         self.is_expanded = False
+        self.random_seed = random_seed
 
     @property
     def N(self):
@@ -180,14 +183,17 @@ class MCTSNode:
         child_U = self.child_U(subset_number)
         child_action_score_return = []
         for dim in range(len(self.child_N[subset_number])):
-            child_action_score_return.append(child_Q[dim] + child_U[dim])
+            # self.random_seed += 1
+            noise_U = np.random.normal(child_U[dim], NOISE_VAR)
+            # print("seed is {0} with number {1}".format(self.random_seed, str(list(noise_U))))
+            child_action_score_return.append(child_Q[dim] +  noise_U)
         return child_action_score_return
 
     def select_leaf(self, k=5, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
         """
          {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
         """
-
+        np.random.seed(self.random_seed)
         current = self
         while True:
             current.N += 1
@@ -356,7 +362,7 @@ class MCTSNode:
             assert self.children_state_pair.get(new_state_list) is None
             self.children_state_pair.update({new_state_list: action})
             self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
-                                             TreeEnv=self.TreeEnv, var_list=new_var_list,
+                                             TreeEnv=self.TreeEnv, var_list=new_var_list, random_seed=self.random_seed,
                                              action=action, parent=self)
         return self.children[action]
 
@@ -477,22 +483,23 @@ class MCTS:
     the tree search.
     """
 
-    def __init__(self, TreeEnv, seconds_per_move=None,
-                 simulations_per_move=800, num_parallel=20):
+    def __init__(self, TreeEnv, tree_save_dir=None, seconds_per_move=None,
+                 simulations_per_move=800, num_per_parallel=20):
         """
         :param TreeEnv: Static class that defines the environment dynamics,
         e.g. which state follows from another state when performing an action.
         :param seconds_per_move: Currently unused.
         :param simulations_per_move: Number of traversals through the tree
         before performing a step.
-        :param num_parallel: Number of leaf nodes to collect before evaluating
+        :param num_per_parallel: Number of leaf nodes to collect before evaluating
         them in conjunction.
         """
         # self.agent_netw = agent_netw
+        self.tree_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir is None else tree_save_dir
         self.TreeEnv = TreeEnv
         self.seconds_per_move = seconds_per_move
         self.simulations_per_move = simulations_per_move
-        self.num_parallel = num_parallel
+        self.num_parallel = num_per_parallel
         self.temp_threshold = None  # Overwritten in initialize_search
 
         self.qs = []
@@ -502,11 +509,13 @@ class MCTS:
 
         self.root = None
         self.original_var = None
+        self.random_seed = None
 
-    def initialize_search(self):
+    def initialize_search(self, random_seed):
+        self.random_seed = random_seed
         init_state, init_var_list = self.TreeEnv.initial_state(self.TreeEnv.data_all)
         n_action_types = self.TreeEnv.n_action_types
-        self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list)
+        self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list, self.random_seed)
         self.original_var = init_var_list[0]
         self.qs = []
         self.rewards = []
@@ -547,6 +556,11 @@ class MCTS:
         #           format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
         # self.root.print_tree(tree_writer)
         return self
+
+    def save(self, current_simulations):
+        with open(self.tree_save_dir+'_plays{0}_{1}.pkl'.format(current_simulations,
+                                                                datetime.today().strftime('%Y-%m-%d-%H')), 'wb') as f:
+            pickle.dump(self, f)
 
     def pick_action(self):
         """
@@ -632,7 +646,7 @@ def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
                 if thread_child_action in origin_node.children.keys():
                     origin_node_child = origin_node.children[thread_child_action]
                 else:
-                    print('omg')
+                    pass
             update_sum += iterative_handle_nodes(merged_node.children[thread_child_action],
                                                  thread_node.children[thread_child_action],
                                                  origin_node_child,
@@ -640,7 +654,7 @@ def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
         else:
             if origin_node is not None:
                 assert thread_child_action not in origin_node.children.keys()
-            merged_node.children[thread_child_action] = thread_node[thread_child_action]
+            merged_node.children[thread_child_action] = thread_node.children[thread_child_action]
     return update_sum + 1
 
 
@@ -649,6 +663,9 @@ def merge_mcts(mcts_threads, mcts_origin):
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
+    for mcts in mcts_threads:
+        print("\n tree printed is: ")
+        mcts.root.print_tree()
     update_sum = 0
     for i in range(1, len(mcts_threads)):
         merged_node = mcts_merged.root.parent
@@ -667,7 +684,11 @@ def merge_mcts(mcts_threads, mcts_origin):
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
     print("update_sum is {0}".format(update_sum))
-    mcts_threads_new = [deepcopy(mcts_merged) for i in range(0, len(mcts_threads))]
+    mcts_threads_new = []
+    for i in range(0, len(mcts_threads)):
+        mcts_threads_new.append(deepcopy(mcts_merged))
+        mcts_threads_new[i].random_seed = i
+
     mcts_origin_new = deepcopy(mcts_merged)
     del mcts_threads
     del mcts_origin
@@ -687,6 +708,10 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
     rewards in each step, total return for this episode and the final state of
     this episode.
     """
+    # with open('../mimic_learner/save_tmp/mcts_save_2020-03-12-19.pkl', 'rb') as f:
+    #     mcts_tmp = pickle.load(f)
+    # mcts_tmp.root.print_tree()
+
     # mcts = MCTS(TreeEnv)
     # mcts.initialize_search()
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
@@ -694,10 +719,10 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
     mcts_threads = []
     for i in range(4):
         mcts_thread = MCTS(TreeEnv)
-        mcts_thread.initialize_search()
+        mcts_thread.initialize_search(random_seed=i+1)
         mcts_threads.append(mcts_thread)
     mcts_origin = MCTS(TreeEnv)
-    mcts_origin.initialize_search()
+    mcts_origin.initialize_search(random_seed=0)
 
     while True:
         pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
@@ -715,6 +740,7 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
             print('multithread time is {0}'.format(str(end_time - start_time)))
             current_simulations = mcts_threads[0].root.parent.child_N[None]
             print('current simulations number is {0}'.format(current_simulations))
+            mcts_origin.save(current_simulations)
             # start_time = time.time()
             # for i in range(4):
             #     mcts.tree_search(original_var=mcts.original_var, avg_timer_record=avg_timer_record)
