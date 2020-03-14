@@ -11,7 +11,7 @@ DRL:
     frame_per_action: 5
     learning_rate: 0.000001
     cuda: True
-    ckpt_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DRL/flappybird/'
+    ckpt_dir: '/DRL-interpreter-model/DRL/flappybird/'
     ckpt_save_iter: 100
     max_iter: 10000
     ckpt_load: True
@@ -19,7 +19,7 @@ DRL:
 #    beta1_D: 0.5
 #    beta2_D: 0.9
     input_image_size: 80
-    data_save_path: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/flappybird/'
+    data_save_path: '/DRL-interpreter-model/data/flappybird/'
 
 DEG:
   FVAE:
@@ -39,18 +39,19 @@ DEG:
     image_width : 64
     num_workers : 2
     print_iter : 500
-    ckpt_dir : '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DEG/flappybird/'
+    ckpt_dir : '/DRL-interpreter-model/DEG/flappybird/'
     ckpt_save_iter: 10000
     ckpt_load: True
     output_save: True
-    output_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/DEG/flappybird/'
-    dset_dir: '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
+    output_dir: '/DRL-interpreter-model/DEG/flappybird/'
+    dset_dir: '/DRL-interpreter-model/data'
     viz_ta_iter: 10000
     image_type: 'color'
 
 Mimic:
   Learn:
     cuda : True
-    num_simulations: 500
+    num_simulations: 1000
     replay_memory_size: 10000
     episodic_sample_number: 50
+    saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'

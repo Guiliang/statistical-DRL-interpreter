@@ -50,8 +50,7 @@ class StaticEnv:
         """
         raise NotImplementedError
 
-    @staticmethod
-    def get_return(state, step_idx):
+    def get_return(self, state, step_idx):
         """
         Returns the return that the agent has achieved so far when he is in
         a given state after a given number of steps.

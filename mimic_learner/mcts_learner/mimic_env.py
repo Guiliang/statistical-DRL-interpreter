@@ -129,6 +129,9 @@ class MimicEnv(StaticEnv):
             if len(delta_all) > 0:
                 mu, std = norm.fit(delta_all)
                 std_weighted_sum += float(len(subsection)) / total_length * std
+        # if self.initial_std - std_weighted_sum > 0.01306:
+        #     print('testing')
+        # TODO: punish the split number
         return self.initial_std - std_weighted_sum
 
     @staticmethod

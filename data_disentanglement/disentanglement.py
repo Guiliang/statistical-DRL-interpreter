@@ -15,7 +15,10 @@ from data_disentanglement.nn_deg.fvae_model import FactorVAE1, FactorVAE2, Discr
 
 
 class Disentanglement(object):
-    def __init__(self, config, local_test_flag=False):
+    def __init__(self, config, local_test_flag=False, global_model_data_path=''):
+
+        self.global_model_data_path = global_model_data_path
+
         # Misc
         use_cuda = torch.cuda.is_available()
         self.device = 'cuda' if use_cuda else 'cpu'
@@ -53,7 +56,7 @@ class Disentanglement(object):
         self.nets = [self.VAE, self.D]
 
         # Checkpoint
-        self.ckpt_dir = os.path.join(config.DEG.FVAE.ckpt_dir, 'saved_model')
+        self.ckpt_dir = os.path.join(self.global_model_data_path +config.DEG.FVAE.ckpt_dir, 'saved_model')
         self.ckpt_save_iter = config.DEG.FVAE.ckpt_save_iter
         if not local_test_flag:
             mkdirs(self.ckpt_dir)
@@ -61,7 +64,7 @@ class Disentanglement(object):
         #     self.load_checkpoint(config.DEG.FVAE.ckpt_load)
 
         # Output(latent traverse GIF)
-        self.output_dir = os.path.join(config.DEG.FVAE.output_dir, 'output')
+        self.output_dir = os.path.join(self.global_model_data_path+config.DEG.FVAE.output_dir, 'output')
         self.output_save = config.DEG.FVAE.output_save
         self.viz_ta_iter = config.DEG.FVAE.viz_ta_iter
         if not local_test_flag:

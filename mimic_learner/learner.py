@@ -2,7 +2,7 @@ from datetime import datetime
 
 import torch
 
-from mimic_learner.mcts_learner.mcts import execute_episode
+from mimic_learner.mcts_learner.mcts import execute_episode, test_mcts
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
 from PIL import Image
@@ -12,19 +12,20 @@ from utils.memory_utils import PrioritizedReplay
 
 
 class MimicLearner():
-    def __init__(self, game_name, config, local_test_flag):
+    def __init__(self, game_name, config, local_test_flag, global_model_data_path):
         self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim*2)
         self.game_name = game_name
         self.action_number = config.DRL.Learn.actions
+        self.global_model_data_path = global_model_data_path
 
         self.num_simulations = config.Mimic.Learn.num_simulations
         self.episodic_sample_number = config.Mimic.Learn.episodic_sample_number
-        self.data_save_dir = config.DEG.FVAE.dset_dir
+        self.data_save_dir = self.global_model_data_path+ config.DEG.FVAE.dset_dir
         self.image_type = config.DEG.FVAE.image_type
         self.iteration_number = 0
 
         # initialize dientangler
-        self.dientangler = Disentanglement(config, local_test_flag)
+        self.dientangler = Disentanglement(config, local_test_flag, self.global_model_data_path)
 
         if not local_test_flag:
             self.dientangler.load_checkpoint()
@@ -32,6 +33,8 @@ class MimicLearner():
         # experience replay
         # self.memory = PrioritizedReplay(capacity=config.Mimic.Learn.replay_memory_size)
         self.memory = []
+
+        self.mcst_saved_dir = None if local_test_flag else config.Mimic.Learn.saved_dir
 
     def data_loader(self, episode_number):
 
@@ -77,6 +80,10 @@ class MimicLearner():
             # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
             self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
 
+    def test_mimic_model(self):
+        model_dir = "../mimic_learner/save_tmp/mcts_save_plays2880.0_2020-03-13-15.pkl"
+        test_mcts(model_dir)
+
     def train_mimic_model(self):
 
         with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')), 'w') as tree_writer:
@@ -86,4 +93,5 @@ class MimicLearner():
 
                 execute_episode(num_simulations=self.num_simulations,
                                 TreeEnv=self.mimic_env,
-                                tree_writer=tree_writer)
+                                tree_writer=tree_writer,
+                                mcts_saved_dir = self.mcst_saved_dir)

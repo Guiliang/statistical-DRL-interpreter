@@ -12,3 +12,4 @@ data_disentanglement/nn_deg/__pycache__/
 mimic_learner/tree_plots/*
 
 sdl-venv-py37/
+mimic_learner/save_tmp/

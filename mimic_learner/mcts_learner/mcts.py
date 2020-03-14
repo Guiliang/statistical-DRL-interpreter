@@ -467,7 +467,8 @@ class MCTSNode:
         #                "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
         node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}|".format(self.action, self.N,
                                                                                     round(self.Q, 6), round(self.U, 6),
-                                                                                    round(return_value, 6))
+                                                                                    round(return_value, 6),
+                                                                                               self.state)
 
         # node_string += ",state:{}".format(self.state)
         print(node_string)
@@ -555,9 +556,9 @@ class MCTS:
         #     print("Avg Time of {0} is {1}".
         #           format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
         # self.root.print_tree(tree_writer)
-        return self
+        return self, avg_timer_record
 
-    def save(self, current_simulations):
+    def save_mcts(self, current_simulations):
         with open(self.tree_save_dir+'_plays{0}_{1}.pkl'.format(current_simulations,
                                                                 datetime.today().strftime('%Y-%m-%d-%H')), 'wb') as f:
             pickle.dump(self, f)
@@ -663,9 +664,9 @@ def merge_mcts(mcts_threads, mcts_origin):
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
-    for mcts in mcts_threads:
-        print("\n tree printed is: ")
-        mcts.root.print_tree()
+    # for mcts in mcts_threads:
+    #     print("\n tree printed is: ")
+    #     mcts.root.print_tree()
     update_sum = 0
     for i in range(1, len(mcts_threads)):
         merged_node = mcts_merged.root.parent
@@ -683,7 +684,7 @@ def merge_mcts(mcts_threads, mcts_origin):
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
-    print("update_sum is {0}".format(update_sum))
+    # print("update_sum is {0}".format(update_sum))
     mcts_threads_new = []
     for i in range(0, len(mcts_threads)):
         mcts_threads_new.append(deepcopy(mcts_merged))
@@ -695,7 +696,12 @@ def merge_mcts(mcts_threads, mcts_origin):
     return mcts_threads_new, mcts_origin_new
 
 
-def execute_episode(num_simulations, TreeEnv, tree_writer):
+def test_mcts(model_dir):
+    with open(model_dir, 'rb') as f:
+        mcts_tmp = pickle.load(f)
+    mcts_tmp.root.print_tree()
+
+def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir):
     """
     Executes a single episode of the task using Monte-Carlo tree search with
     the given agent network. It returns the experience tuples collected during
@@ -708,20 +714,14 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
     rewards in each step, total return for this episode and the final state of
     this episode.
     """
-    # with open('../mimic_learner/save_tmp/mcts_save_2020-03-12-19.pkl', 'rb') as f:
-    #     mcts_tmp = pickle.load(f)
-    # mcts_tmp.root.print_tree()
-
-    # mcts = MCTS(TreeEnv)
-    # mcts.initialize_search()
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
     pool = mp.Pool(processes=4)
     mcts_threads = []
     for i in range(4):
-        mcts_thread = MCTS(TreeEnv)
+        mcts_thread = MCTS(TreeEnv, tree_save_dir=mcts_saved_dir)
         mcts_thread.initialize_search(random_seed=i+1)
         mcts_threads.append(mcts_thread)
-    mcts_origin = MCTS(TreeEnv)
+    mcts_origin = MCTS(TreeEnv, tree_save_dir=mcts_saved_dir)
     mcts_origin.initialize_search(random_seed=0)
 
     while True:
@@ -729,18 +729,29 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
         current_simulations = 0
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
+
+            if current_simulations%100 == 0:
+                mcts_origin.root.print_tree(tree_writer)
+                if current_simulations > 0:
+                    for timer_key in avg_timer_record.keys():
+                        print("Avg Time of {0} is {1}".
+                              format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
+                mcts_origin.save_mcts(current_simulations)
+
             start_time = time.time()
             results = []
             for i in range(4):
                 results.append(pool.apply_async(mcts_threads[i].tree_search,
                                                 args=(mcts_threads[i].original_var, avg_timer_record)))
-            mcts_threads = [p.get() for p in results]
+            mcts_results = [p.get() for p in results]
+            mcts_threads = [results[0] for results in mcts_results]
+            avg_timer_record = mcts_results[0][1]
             mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin)
             end_time = time.time()
             print('multithread time is {0}'.format(str(end_time - start_time)))
             current_simulations = mcts_threads[0].root.parent.child_N[None]
             print('current simulations number is {0}'.format(current_simulations))
-            mcts_origin.save(current_simulations)
+
             # start_time = time.time()
             # for i in range(4):
             #     mcts.tree_search(original_var=mcts.original_var, avg_timer_record=avg_timer_record)
@@ -748,12 +759,6 @@ def execute_episode(num_simulations, TreeEnv, tree_writer):
             # end_time = time.time()
             # print('singlethread time is {0}'.format(str(end_time - start_time)))
             # break
-
-        for timer_key in avg_timer_record.keys():
-            print("Avg Time of {0} is {1}".
-                  format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-        mcts.root.print_tree(tree_writer)
-        # print("_"*100)
         break
 
         action = mcts.pick_action()
