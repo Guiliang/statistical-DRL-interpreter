@@ -147,7 +147,7 @@ def handle_dict_list(dict_list_A, dict_list_B, option):
         if key in dict_list_A.keys():
             list_A = dict_list_A.get(key)
             if option == 'add':
-                list_new = list_A + list(set(list_A) - set(list_B))
+                list_new = list(set(list_A + list_B))
             elif option == 'substract':
                 list_new = list(set(list_A) - set(list_B))
             else:

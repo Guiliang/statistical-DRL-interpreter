@@ -186,11 +186,10 @@ class MCTSNode:
             child_action_score_return.append(child_Q[dim] +  noise_U)
         return child_action_score_return
 
-    def select_leaf(self, k=5, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
+    def select_leaf(self, k, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
         """
          {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
         """
-        np.random.seed(self.random_seed)
         current = self
         while True:
             current.N += 1
@@ -493,19 +492,26 @@ class MCTSNode:
                                                           round(self.Q, 6), round(self.U, 6),
                                                             return_value, self.state)
         print(node_string)
-
-        for level in range(len(self.state)):
-            sub_child_actions = []
-            sub_child_visit_number = []
-            for action_index in range(len(child_actions)):
-                if int(child_actions[action_index].split('_')[0]) == level:
-                    sub_child_actions.append(child_actions[action_index])
-                    sub_child_visit_number.append(child_visit_number[action_index])
-            child_visit_probability = np.asarray(sub_child_visit_number)/sum(sub_child_visit_number)
-            selected_index = np.random.choice(len(sub_child_visit_number), 1, p=child_visit_probability)
-            selected_action =sub_child_actions[selected_index]
-            selected_node.children[selected_action] = deepcopy(self.children[selected_action])
-            self.children[selected_action].select_action_by_n(selected_node.children[selected_action])
+        if len(child_actions)>0:
+            # for state_index in range(len(self.state)):
+            # sub_child_actions = []
+            # sub_child_visit_number = []
+            # for action_index in range(len(child_actions)):
+            #     if int(child_actions[action_index].split('_')[0]) == state_index:
+            #         sub_child_actions.append(child_actions[action_index])
+            #         sub_child_visit_number.append(child_visit_number[action_index])
+            # if len(sub_child_actions) == 0:
+            #     continue
+            child_visit_probability = np.asarray(child_visit_number)/sum(child_visit_number)
+            # selected_index = np.random.choice(len(sub_child_visit_number), 1, p=child_visit_probability)[0]
+            selected_index = np.argmax(child_visit_probability)
+            selected_action =child_actions[selected_index]
+            if selected_node is not None:
+                selected_node.children[selected_action] = deepcopy(self.children[selected_action])
+                next_selected_node = selected_node.children[selected_action]
+            else:
+                next_selected_node = None
+            self.children[selected_action].select_action_by_n(level=level+1, selected_node=next_selected_node)
 
 
 class MCTS:
@@ -550,7 +556,7 @@ class MCTS:
         self.searches_pi = []
         self.obs = []
 
-    def tree_search(self, original_var, avg_timer_record):
+    def tree_search(self, k, original_var, avg_timer_record):
         """
         Performs multiple simulations in the tree (following trajectories)
         until a given amount of leaves to expand have been encountered.
@@ -562,10 +568,12 @@ class MCTS:
         # if num_parallel is None:
         num_parallel = self.num_parallel
         leaves = []
-
+        np.random.seed(self.random_seed)
+        print("k is {0}".format(k))
         while len(leaves) < num_parallel:
             # print("_"*50)
-            leaf, avg_timer_record = self.root.select_leaf(reference_data=self.TreeEnv.data_all,
+            leaf, avg_timer_record = self.root.select_leaf(k=k,
+                                                           reference_data=self.TreeEnv.data_all,
                                                            original_var=original_var,
                                                            avg_timer_record=avg_timer_record)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
@@ -592,9 +600,10 @@ class MCTS:
 
     def select_final_actions(self):
         mcts_empty = MCTS(self.TreeEnv)
-        mcts_empty.root = deepcopy(self.root)
-        self.root.select_action_by_n(mcts_empty.root)
-        mcts_empty.save_mcts(current_simulations='8final')
+        # mcts_empty.root = deepcopy(self.root)
+        self.root.select_action_by_n(level=0, selected_node=None)  # TODO: it is incorrect, fix it.
+        if mcts_empty.root is not None:
+            mcts_empty.save_mcts(current_simulations='@final')
 
     def pick_action(self):
         """
@@ -697,9 +706,9 @@ def merge_mcts(mcts_threads, mcts_origin):
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].N)
-    for mcts in mcts_threads:
-        print("\n tree printed is: ")
-        mcts.root.print_tree()
+    # for mcts in mcts_threads:
+    #     print("\n tree printed is: ")
+    #     mcts.root.print_tree()
     update_sum = 0
     for i in range(1, len(mcts_threads)):
         merged_node = mcts_merged.root.parent
@@ -734,7 +743,7 @@ def test_mcts(model_dir):
         mcts_tmp = pickle.load(f)
     mcts_tmp.root.print_tree()
 
-def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir):
+def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir, max_k):
     """
     Executes a single episode of the task using Monte-Carlo tree search with
     the given agent network. It returns the experience tuples collected during
@@ -756,7 +765,7 @@ def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir):
         mcts_threads.append(mcts_thread)
     mcts_origin = MCTS(TreeEnv, tree_save_dir=mcts_saved_dir)
     mcts_origin.initialize_search(random_seed=0)
-
+    k = 5
     while True:
         pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
         current_simulations = 0
@@ -775,7 +784,8 @@ def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir):
             results = []
             for i in range(4):
                 results.append(pool.apply_async(mcts_threads[i].tree_search,
-                                                args=(mcts_threads[i].original_var, avg_timer_record)))
+                                                args=(k, mcts_threads[i].original_var, avg_timer_record)))
+            k = k + 1 if k < max_k else k
             mcts_results = [p.get() for p in results]
             mcts_threads = [results[0] for results in mcts_results]
             avg_timer_record = mcts_results[0][1]
@@ -784,15 +794,17 @@ def execute_episode(num_simulations, TreeEnv, tree_writer, mcts_saved_dir):
             print('multithread time is {0}'.format(str(end_time - start_time)))
             current_simulations = mcts_threads[0].root.parent.child_N[None]
             print('current simulations number is {0}'.format(current_simulations))
-
+            # break
             # start_time = time.time()
             # for i in range(4):
-            #     mcts.tree_search(original_var=mcts.original_var, avg_timer_record=avg_timer_record)
+            #     mcts.tree_search(k, original_var=mcts.original_var, avg_timer_record=avg_timer_record)
             # current_simulations = mcts.root.parent.child_N[None]
             # end_time = time.time()
             # print('singlethread time is {0}'.format(str(end_time - start_time)))
             # break
+        mcts_origin.root.print_tree()
 
+        print('\n The extracted tree is:')
         mcts_origin.select_final_actions()
 
         break

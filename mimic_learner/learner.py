@@ -35,6 +35,7 @@ class MimicLearner():
         self.memory = []
 
         self.mcst_saved_dir = None if local_test_flag else config.Mimic.Learn.saved_dir
+        self.max_k=config.Mimic.Learn.max_k
 
     def data_loader(self, episode_number):
 
@@ -87,11 +88,12 @@ class MimicLearner():
     def train_mimic_model(self):
 
         with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')), 'w') as tree_writer:
-            for episode_number in range(1, 100):
-                self.data_loader(episode_number)
-                self.mimic_env.add_data(self.memory)
+            # for episode_number in range(1, 100):
+            self.data_loader(1)
+            self.mimic_env.add_data(self.memory)
 
-                execute_episode(num_simulations=self.num_simulations,
-                                TreeEnv=self.mimic_env,
-                                tree_writer=tree_writer,
-                                mcts_saved_dir = self.mcst_saved_dir)
+            execute_episode(num_simulations=self.num_simulations,
+                            TreeEnv=self.mimic_env,
+                            tree_writer=tree_writer,
+                            mcts_saved_dir = self.mcst_saved_dir,
+                            max_k=self.max_k)

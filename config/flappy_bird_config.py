@@ -74,6 +74,7 @@ class FlappyBirdConfig(object):
             num_simulations = None
             replay_memory_size = None
             episodic_sample_number = None
+            max_k = None
 
     @staticmethod
     def load(file_path):

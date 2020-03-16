@@ -55,3 +55,4 @@ Mimic:
     replay_memory_size: 10000
     episodic_sample_number: 50
     saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'
+    max_k: 100
