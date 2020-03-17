@@ -918,7 +918,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
     pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
 
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=20)
+    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=50)
     # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
     mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
