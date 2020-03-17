@@ -51,8 +51,8 @@ DEG:
 Mimic:
   Learn:
     cuda : True
-    num_simulations: 1000
+    num_simulations: 1001
     replay_memory_size: 10000
-    episodic_sample_number: 50
+    episodic_sample_number: 1000  # the number of selected data points
     saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'
     max_k: 100

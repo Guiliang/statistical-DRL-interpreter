@@ -59,7 +59,7 @@ class MimicEnv(StaticEnv):
         subset_index = int(action_values[0])
         dim = int(action_values[1])
         split_value = float(action_values[2])
-        print('spitting rule is {0}'.format(action))
+        # print('spitting rule is {0}'.format(action))
         subset_state1 = []
         subset_delta1 = []
         subset_state2 = []
@@ -103,8 +103,8 @@ class MimicEnv(StaticEnv):
         # return np.unravel_index(state, shape) == (0, 6) or step_idx >= 15
         return False
 
-    @staticmethod
-    def initial_state(state_data=None):
+    def initial_state(self):
+        state_data = self.data_all
         state_index = []
         delta_all = []
         for i in range(len(state_data)):

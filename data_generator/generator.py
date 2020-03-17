@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn.functional as tnf
 import torch.optim as optim
-from tqdm import tqdm
 
 from data_generator.fb_game.flappy_bird import FlappyBird
 from data_generator.nn_drl.dqn_fb import FlappyBirdDQN
@@ -27,7 +26,6 @@ class DRLDataGenerator():
         self.device = 'cuda' if use_cuda else 'cpu'
         self.ckpt_dir = self.config.DRL.Learn.ckpt_dir
         self.ckpt_save_iter = self.config.DRL.Learn.ckpt_save_iter
-        self.pbar = tqdm(total=self.config.DRL.Learn.max_iter)
         mkdirs(self.ckpt_dir)
 
         self.apply_prioritize_memory = False

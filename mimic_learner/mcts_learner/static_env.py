@@ -31,8 +31,8 @@ class StaticEnv:
         """
         raise NotImplementedError
 
-    @staticmethod
-    def initial_state():
+    # @staticmethod
+    def initial_state(self):
         """
         Returns the initial state of the environment.
         """

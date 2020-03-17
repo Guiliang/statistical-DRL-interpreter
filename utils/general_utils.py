@@ -58,9 +58,9 @@ class CustomTensorDataset(Dataset):
         return self.data_tensor.size(0)
 
 
-def return_data(config):
+def return_data(config, global_model_data_path):
     name = config.name
-    dset_dir = config.dset_dir
+    dset_dir = global_model_data_path+config.dset_dir
     batch_size = config.batch_size
     num_workers = config.num_workers
     image_length = config.image_length

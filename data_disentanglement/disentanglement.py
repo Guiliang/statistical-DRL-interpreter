@@ -2,7 +2,6 @@
 
 import os
 # import visdom
-from tqdm import tqdm
 
 import torch
 import torch.optim as optim
@@ -26,11 +25,12 @@ class Disentanglement(object):
         self.max_iter = config.DEG.FVAE.max_iter
         self.print_iter = config.DEG.FVAE.print_iter
         self.global_iter = 0
-        self.pbar = tqdm(total=self.max_iter)
+
+        self.pbar = None
 
         # Data
         self.batch_size = config.DEG.FVAE.batch_size
-        self.data_loader = return_data(config.DEG.FVAE)
+        self.data_loader = return_data(config.DEG.FVAE, global_model_data_path)
 
         # Networks & Optimizers
         self.z_dim = config.DEG.FVAE.z_dim
@@ -74,11 +74,12 @@ class Disentanglement(object):
         self.image_width = config.DEG.FVAE.image_width
 
     def train(self):
+        from tqdm import tqdm
         self.net_mode(train=True)
 
         ones = torch.ones(self.batch_size, dtype=torch.long, device=self.device)
         zeros = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
-
+        self.pbar = tqdm(total=self.max_iter)
         out = False
         while not out:
             for x_true1, x_true2 in self.data_loader:
@@ -215,6 +216,7 @@ class Disentanglement(object):
             self.pbar.write("=> saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
 
     def load_checkpoint(self, ckptname='last', verbose=True):
+
         if ckptname == 'last':
             ckpts = os.listdir(self.ckpt_dir)
             if not ckpts:
@@ -225,7 +227,8 @@ class Disentanglement(object):
             ckpts = [int(ckpt.split('-')[1]) for ckpt in ckpts]
             ckpts.sort(reverse=True)
             ckptname = 'FVAE-' + str(ckpts[0])
-
+        from tqdm import tqdm
+        self.pbar = tqdm(total=self.max_iter)
         filepath = os.path.join(self.ckpt_dir, ckptname)
         if os.path.isfile(filepath):
             with open(filepath, 'rb') as f:

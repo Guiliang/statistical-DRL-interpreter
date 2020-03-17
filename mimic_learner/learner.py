@@ -2,7 +2,7 @@ from datetime import datetime
 
 import torch
 
-from mimic_learner.mcts_learner.mcts import execute_episode, test_mcts
+from mimic_learner.mcts_learner.mcts import execute_episode_parallel, test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
 from PIL import Image
@@ -13,14 +13,14 @@ from utils.memory_utils import PrioritizedReplay
 
 class MimicLearner():
     def __init__(self, game_name, config, local_test_flag, global_model_data_path):
-        self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim*2)
+        self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim * 2)
         self.game_name = game_name
         self.action_number = config.DRL.Learn.actions
         self.global_model_data_path = global_model_data_path
 
         self.num_simulations = config.Mimic.Learn.num_simulations
         self.episodic_sample_number = config.Mimic.Learn.episodic_sample_number
-        self.data_save_dir = self.global_model_data_path+ config.DEG.FVAE.dset_dir
+        self.data_save_dir = self.global_model_data_path + config.DEG.FVAE.dset_dir
         self.image_type = config.DEG.FVAE.image_type
         self.iteration_number = 0
 
@@ -35,7 +35,7 @@ class MimicLearner():
         self.memory = []
 
         self.mcst_saved_dir = None if local_test_flag else config.Mimic.Learn.saved_dir
-        self.max_k=config.Mimic.Learn.max_k
+        self.max_k = config.Mimic.Learn.max_k
 
     def data_loader(self, episode_number):
 
@@ -53,7 +53,8 @@ class MimicLearner():
 
         while self.iteration_number < self.episodic_sample_number * episode_number:
             action_index_t0, action_values_list_t0, reward_t0 = gather_data_values(action_values[self.iteration_number])
-            action_index_t1, action_values_list_t1, reward_t1 = gather_data_values(action_values[self.iteration_number])
+            action_index_t1, action_values_list_t1, reward_t1 = gather_data_values(
+                action_values[self.iteration_number + 1])
 
             image = Image.open('{0}/{1}/{2}/images/{1}-{3}_{2}.png'.format(self.data_save_dir,
                                                                            self.game_name,
@@ -82,18 +83,19 @@ class MimicLearner():
             self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
 
     def test_mimic_model(self):
-        model_dir = "../mimic_learner/save_tmp/mcts_save_plays2880.0_2020-03-13-15.pkl"
-        test_mcts(model_dir)
+        model_dir = "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/MCTS/flappybird/saved_model_plays500.0_2020-03-16-17.pkl"
+        test_mcts(model_dir, TreeEnv=self.mimic_env)
 
     def train_mimic_model(self):
 
-        with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')), 'w') as tree_writer:
+        with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')),
+                  'w') as tree_writer:
             # for episode_number in range(1, 100):
             self.data_loader(1)
             self.mimic_env.add_data(self.memory)
 
-            execute_episode(num_simulations=self.num_simulations,
-                            TreeEnv=self.mimic_env,
-                            tree_writer=tree_writer,
-                            mcts_saved_dir = self.mcst_saved_dir,
-                            max_k=self.max_k)
+            execute_episode_single(num_simulations=self.num_simulations,
+                                   TreeEnv=self.mimic_env,
+                                   tree_writer=tree_writer,
+                                   mcts_saved_dir=self.global_model_data_path + self.mcst_saved_dir,
+                                   max_k=self.max_k)
