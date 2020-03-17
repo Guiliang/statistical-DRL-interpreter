@@ -255,7 +255,11 @@ class MCTSNode:
                 child_action_score = current.child_action_score(subset_number=j)
                 child_action_score = np.asarray(child_action_score)
                 action_score_shape = child_action_score.shape
-                child_action_score_all[j, :action_score_shape[0], :action_score_shape[1]] = child_action_score
+                try:
+                    child_action_score_all[j, :action_score_shape[0], :action_score_shape[1]] = child_action_score
+                except:
+                    print(child_action_score_all)
+                    raise ValueError("check")
 
             topK_action_score = [child_action_score_all[topK_value_index] for topK_value_index in topK_value_index_list]
             best_move_index = topK_value_index_list[np.argmax(topK_action_score)]

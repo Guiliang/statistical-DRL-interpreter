@@ -13,7 +13,7 @@ def run():
     flappybird_config_path = "../environment_settings/flappybird_config.yaml"
     flappybird_config = FlappyBirdConfig.load(flappybird_config_path)
 
-    local_test_flag = False
+    local_test_flag = True
     if local_test_flag:
         flappybird_config.DEG.FVAE.dset_dir = '../example_data'
         global_model_data_path = ''
