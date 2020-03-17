@@ -20,6 +20,7 @@ DRL:
 #    beta2_D: 0.9
     input_image_size: 80
     data_save_path: '/DRL-interpreter-model/data/flappybird/'
+    action_type: 'discrete'
 
 DEG:
   FVAE:
@@ -56,3 +57,4 @@ Mimic:
     episodic_sample_number: 1000  # the number of selected data points
     saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'
     max_k: 100
+

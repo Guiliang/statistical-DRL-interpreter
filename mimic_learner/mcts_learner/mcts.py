@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.004  # 0.04 for parallel
+c_PUCT = 0.015  # 0.04 for parallel
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -40,6 +40,35 @@ class DummyNode:
     # def revert_visits(self, up_to=None): pass
 
     def backup_value(self, value, up_to=None): pass
+
+
+# class MCTSNodeDiscreteAction:
+#
+#     def __init__(self, state, n_actions_types, TreeEnv, var_list, random_seed):
+#         self.var_list = var_list  # record the variance of each subset
+#         self.TreeEnv = TreeEnv
+#
+#         self.depth = 0
+#         parent = DummyNode()
+#
+#         self.parent = parent
+#         self.action = "DiscreteAction"  # continuous actions
+#         self.state = state
+#
+#         self.children = {}
+#
+#         # self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
+#         for j in range(len(state)):
+#             assert len(state[j]) > 0
+#
+#         self.child_N = []
+#         self.child_W = []
+#
+#         for i in range(n_actions_types):
+#             self.child_N.append(0)
+#             self.child_W.append(0)
+#
+#         self.is_expanded = True
 
 
 class MCTSNode:
@@ -469,7 +498,7 @@ class MCTSNode:
         node_string = "----" * level
         # node_string += "Node: action={0}, N={1}, Q={2}, " \
         #                "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
-        node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}|".format(self.action, self.N,
+        node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}, state={5}|".format(self.action, self.N,
                                                                                     round(self.Q, 6), round(self.U, 6),
                                                                                     return_value, self.state)
 
@@ -564,7 +593,7 @@ class MCTS:
         before performing a step.
         """
         # self.agent_netw = agent_netw
-        self.tree_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir is None else tree_save_dir
+        self.tree_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir =='' else tree_save_dir
         self.TreeEnv = TreeEnv
         # self.simulations_per_move = simulations_per_move
         self.num_parallel = num_per_parallel
@@ -626,15 +655,16 @@ class MCTS:
         # self.root.print_tree(tree_writer)
         return self, avg_timer_record
 
-    def save_mcts(self, mode, current_simulations):
+    def save_mcts(self, mode, current_simulations, action_id):
 
-        file_name = self.tree_save_dir + '_{0}_plays{1}_{2}.pkl'.format(mode,
+        file_name = self.tree_save_dir + '_action{3}_{0}_plays{1}_{2}.pkl'.format(mode,
                                                                         current_simulations,
-                                                                        datetime.today().strftime('%Y-%m-%d-%H'))
+                                                                        datetime.today().strftime('%Y-%m-%d-%H'),
+                                                                                 action_id)
         with open(file_name, 'wb') as f:
             pickle.dump(self, f)
 
-    def select_final_actions(self, mode):
+    def select_final_actions(self, mode, action_id):
         mcts_empty = MCTS(None)
         # mcts_empty.root = deepcopy(self.root)
 
@@ -662,7 +692,7 @@ class MCTS:
         PBT.print_final_binary_tree(root_state_str, indent_number=0)
 
         if mcts_empty.root is not None:
-            mcts_empty.save_mcts(mode=mode, current_simulations='@final')
+            mcts_empty.save_mcts(mode=mode, current_simulations='@final', action_id=action_id)
 
     def pick_action(self):
         """
@@ -872,21 +902,24 @@ def merge_mcts(mcts_threads, mcts_origin):
     return mcts_threads_new, mcts_origin_new
 
 
-def test_mcts(model_dir, TreeEnv):
+def test_mcts(model_dir, TreeEnv, action_id):
     with open(model_dir, 'rb') as f:
         mcts_read = pickle.load(f)
     mcts_read.root.print_tree(TreeEnv)
-    mcts_read.select_final_actions(mode='testing')
+    mcts_read.select_final_actions(mode='testing', action_id=action_id)
+
+    # TODO: add explanation of transferring latent variables to image
 
 
-def execute_episode_single(num_simulations, TreeEnv, tree_writer, mcts_saved_dir, max_k):
+def execute_episode_single(num_simulations, TreeEnv, tree_writer,
+                           mcts_saved_dir, max_k, init_state, init_var_list, action_id ):
     tracemalloc.start()
     from tqdm import tqdm
     pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
 
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=100)
-    init_state, init_var_list = TreeEnv.initial_state()
+    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=20)
+    # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
     mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
                            n_action_types=n_action_types)
@@ -904,7 +937,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer, mcts_saved_dir
                     for timer_key in avg_timer_record.keys():
                         print("Avg Time of {0} is {1}".
                               format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-                mcts.save_mcts(current_simulations=current_simulations, mode='single')
+                mcts.save_mcts(current_simulations=current_simulations, mode='single', action_id=action_id)
 
             start_time = time.time()
             mcts.tree_search(k, original_var=mcts.original_var, avg_timer_record=avg_timer_record, TreeEnv=TreeEnv)
@@ -920,12 +953,13 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer, mcts_saved_dir
             mcts.root.print_tree(TreeEnv)
 
         print('\n The extracted tree is:')
-        mcts.select_final_actions(mode='single')
+        mcts.select_final_actions(mode='single', action_id=action_id)
 
         break
 
 
-def execute_episode_parallel(num_simulations, TreeEnv, tree_writer, mcts_saved_dir, max_k):
+def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
+                             mcts_saved_dir, max_k, init_state, init_var_list, action_id):
     tracemalloc.start()
     from tqdm import tqdm
     pbar = tqdm(total=num_simulations)
@@ -933,7 +967,7 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer, mcts_saved_d
     pool = mp.Pool(processes=5)
     mcts_threads = []
 
-    init_state, init_var_list = TreeEnv.initial_state()
+    # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
 
     for i in range(5):
@@ -958,7 +992,7 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer, mcts_saved_d
                     for timer_key in avg_timer_record.keys():
                         print("Avg Time of {0} is {1}".
                               format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-                mcts_origin.save_mcts(current_simulations=current_simulations, mode='parallel')
+                mcts_origin.save_mcts(current_simulations=current_simulations, mode='parallel', action_id=action_id)
 
             start_time = time.time()
             results = []
@@ -983,6 +1017,6 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer, mcts_saved_d
         mcts_origin.root.print_tree(TreeEnv)
 
         print('\n The extracted tree is:')
-        mcts_origin.select_final_actions(mode='parallel')
+        mcts_origin.select_final_actions(mode='parallel', action_id=action_id)
 
         break

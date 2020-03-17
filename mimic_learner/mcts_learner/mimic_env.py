@@ -103,13 +103,18 @@ class MimicEnv(StaticEnv):
         # return np.unravel_index(state, shape) == (0, 6) or step_idx >= 15
         return False
 
-    def initial_state(self):
+    def initial_state(self, action=None):
         state_data = self.data_all
         state_index = []
         delta_all = []
         for i in range(len(state_data)):
-            state_index.append(i)
-            delta_all.append(state_data[i][-1])
+            if action is not None:
+                if action == state_data[i][1]:
+                    state_index.append(i)
+                    delta_all.append(state_data[i][-1])
+            else:
+                state_index.append(i)
+                delta_all.append(state_data[i][-1])
         #     delta.append(state_data[i][-1])
         _, std = norm.fit(delta_all)
         return [state_index], [std]

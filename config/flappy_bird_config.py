@@ -63,6 +63,7 @@ class FlappyBirdConfig(object):
             beta1_D = None
             beta2_D = None
             viz_ta_iter = None
+            action_type = None
 
     class Mimic(InitWithDict):
 

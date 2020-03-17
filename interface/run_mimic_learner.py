@@ -17,6 +17,7 @@ def run():
     if local_test_flag:
         flappybird_config.DEG.FVAE.dset_dir = '../example_data'
         global_model_data_path = ''
+        flappybird_config.Mimic.Learn.episodic_sample_number = 49
     elif os.path.exists("/Local-Scratch/oschulte/Galen"):
         global_model_data_path = "/Local-Scratch/oschulte/Galen"
     elif os.path.exists("/home/functor/scratch/Galen/project-DRL-Interpreter"):

@@ -16,6 +16,7 @@ class MimicLearner():
         self.mimic_env = MimicEnv(n_action_types=config.DEG.FVAE.z_dim * 2)
         self.game_name = game_name
         self.action_number = config.DRL.Learn.actions
+        self.action_type = config.DRL.Learn.action_type
         self.global_model_data_path = global_model_data_path
 
         self.num_simulations = config.Mimic.Learn.num_simulations
@@ -34,7 +35,7 @@ class MimicLearner():
         # self.memory = PrioritizedReplay(capacity=config.Mimic.Learn.replay_memory_size)
         self.memory = []
 
-        self.mcst_saved_dir = None if local_test_flag else config.Mimic.Learn.saved_dir
+        self.mcst_saved_dir = "" if local_test_flag else config.Mimic.Learn.saved_dir
         self.max_k = config.Mimic.Learn.max_k
 
     def data_loader(self, episode_number):
@@ -83,19 +84,27 @@ class MimicLearner():
             self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
 
     def test_mimic_model(self):
-        model_dir = "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/MCTS/flappybird/saved_model_plays500.0_2020-03-16-17.pkl"
-        test_mcts(model_dir, TreeEnv=self.mimic_env)
+        for action_id in range(self.action_number):
+            model_dir = "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/MCTS/flappybird/saved_model_plays500.0_2020-03-16-17.pkl"
+            test_mcts(model_dir, TreeEnv=self.mimic_env, action_id=action_id)
 
     def train_mimic_model(self):
 
-        with open('../mimic_learner/tree_plots/tree_plot_{0}.txt'.format(datetime.today().strftime('%Y-%m-%d-%H')),
-                  'w') as tree_writer:
-            # for episode_number in range(1, 100):
-            self.data_loader(1)
-            self.mimic_env.add_data(self.memory)
-
-            execute_episode_single(num_simulations=self.num_simulations,
-                                   TreeEnv=self.mimic_env,
-                                   tree_writer=tree_writer,
-                                   mcts_saved_dir=self.global_model_data_path + self.mcst_saved_dir,
-                                   max_k=self.max_k)
+        # for episode_number in range(1, 100):
+        self.data_loader(1)
+        self.mimic_env.add_data(self.memory)
+        if self.action_type == 'discrete':
+            for action_id in range(self.action_number):
+                print('\nCurrent action is {0}'.format(action_id))
+                init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+                with open('../mimic_learner/tree_plots/tree_plot_{0}_action{1}.txt'
+                                  .format(datetime.today().strftime('%Y-%m-%d-%H'), action_id), 'w') as tree_writer:
+                    execute_episode_single(num_simulations=self.num_simulations,
+                                           TreeEnv=self.mimic_env,
+                                           tree_writer=tree_writer,
+                                           mcts_saved_dir=self.global_model_data_path + self.mcst_saved_dir,
+                                           max_k=self.max_k,
+                                           init_state=init_state,
+                                           init_var_list=init_var_list,
+                                           action_id=action_id
+                                           )
