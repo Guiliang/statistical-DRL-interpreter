@@ -498,7 +498,7 @@ class MCTSNode:
         node_string = "----" * level
         # node_string += "Node: action={0}, N={1}, Q={2}, " \
         #                "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
-        node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}, state={5}|".format(self.action, self.N,
+        node_string += "|Node: action={0}, N={1}, Q={2}, U={3}, return={4}|".format(self.action, self.N,
                                                                                     round(self.Q, 6), round(self.U, 6),
                                                                                     return_value, self.state)
 
