@@ -255,9 +255,14 @@ class MCTSNode:
                 child_action_score = current.child_action_score(subset_number=j)
                 child_action_score = np.asarray(child_action_score)
                 action_score_shape = child_action_score.shape
+                assert len(action_score_shape) == 2
                 try:
                     child_action_score_all[j, :action_score_shape[0], :action_score_shape[1]] = child_action_score
                 except:
+                    print(current.state[j])
+                    print(j)
+                    print(current.child_N[j])
+                    print(current.child_W[j])
                     print(child_action_score_all)
                     raise ValueError("check")
 
