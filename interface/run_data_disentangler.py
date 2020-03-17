@@ -1,4 +1,8 @@
 import os
+cwd = os.getcwd()
+import sys
+sys.path.append(cwd.replace('/interface', ''))
+print (sys.path)
 from config.flappy_bird_config import FlappyBirdConfig
 from data_disentanglement.disentanglement import Disentanglement
 

@@ -915,10 +915,9 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer, mcts_saved_dir
             pbar.update(current_simulations - counter_pre_simulations)
             print('current simulations number is {0}'.format(current_simulations))
             counter_pre_simulations = current_simulations
-            snapshot = tracemalloc.take_snapshot()
-            display_top(snapshot)
-
-        mcts.root.print_tree(TreeEnv)
+            # snapshot = tracemalloc.take_snapshot()
+            # display_top(snapshot)
+            mcts.root.print_tree(TreeEnv)
 
         print('\n The extracted tree is:')
         mcts.select_final_actions(mode='single')
