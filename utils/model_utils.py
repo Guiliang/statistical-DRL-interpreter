@@ -85,6 +85,10 @@ def handle_image_input(img_colored,
     return x_t
 
 
+def build_decode_input(z):
+    return  torch.from_numpy(z).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+
+
 def store_state_action_data(img_colored, action_values, reward, action_index,
                             save_image_path, action_values_file,
                             game_name, iteration_number):

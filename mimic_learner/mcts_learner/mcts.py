@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.015  # 0.04 for parallel
+c_PUCT = 0.010  # 0.04 for parallel
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -77,7 +77,7 @@ class MCTSNode:
     environment state.
     """
 
-    def __init__(self, state, n_actions_types, TreeEnv, var_list, random_seed, action=None, parent=None):
+    def __init__(self, state, n_actions_types, var_list, random_seed, action=None, parent=None):
         """
         :param state: State that the node should hold.
         :param n_actions_types: Number of actions that can be performed in each
@@ -88,7 +88,6 @@ class MCTSNode:
         :param parent: Parent node.
         """
         self.var_list = var_list  # record the variance of each subset
-        self.TreeEnv = TreeEnv
         if parent is None:
             self.depth = 0
             parent = DummyNode()
@@ -404,7 +403,7 @@ class MCTSNode:
             assert self.children_state_pair.get(new_state_list) is None
             self.children_state_pair.update({new_state_list: action})
             self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
-                                             TreeEnv=self.TreeEnv, var_list=new_var_list, random_seed=self.random_seed,
+                                              var_list=new_var_list, random_seed=self.random_seed,
                                              action=action, parent=self)
         return self.children[action]
 
@@ -482,8 +481,8 @@ class MCTSNode:
             return
         self.parent.backup_value(value, up_to)
 
-    def is_done(self):
-        return self.TreeEnv.is_done_state(self.state, self.depth)
+    # def is_done(self):
+    #     return self.TreeEnv.is_done_state(self.state, self.depth)
 
     # def inject_noise(self):
     #     dirch = np.random.dirichlet([D_NOISE_ALPHA] * self.n_actions)
@@ -518,7 +517,7 @@ class MCTSNode:
         for _, child in sorted(self.children.items()):
             child.print_tree(TreeEnv, writer, level + 1)
 
-    def select_action_by_n(self, level=0, selected_node=None,
+    def select_action_by_n(self, TreeEnv, level=0, selected_node=None,
                            node_child_dict_all=None, node_str_dict_all=None,
                            mother_str=None):
         child_actions = []
@@ -527,7 +526,7 @@ class MCTSNode:
             child_actions.append(action)
             child_visit_number.append(float(child.N))
 
-        return_value = self.TreeEnv.get_return(self.state, self.depth)
+        return_value = TreeEnv.get_return(self.state, self.depth)
         node_string = "----" * level
         node_string += "|Node: action={0}, N={1}, " \
                        "Q={2}, U={3}, return={4}|".format(self.action, self.N,
@@ -550,12 +549,16 @@ class MCTSNode:
 
             selected_split_subset_index = int(selected_action.split('_')[0])
             mother_str_child = ','.join(list(map(str, self.state[selected_split_subset_index])))
-            node_child_dict_all, node_str_dict_all = \
-                self.children[selected_action].select_action_by_n(level=level + 1,
+            node_child_dict_all, node_str_dict_all, final_splitted_states = \
+                self.children[selected_action].select_action_by_n(TreeEnv=TreeEnv,
+                                                                  level=level + 1,
                                                                   selected_node=next_selected_node,
                                                                   node_child_dict_all=node_child_dict_all,
                                                                   node_str_dict_all=node_str_dict_all,
                                                                   mother_str=mother_str_child)
+        else:
+            final_splitted_states = self.state
+
         if self.action is not None:
             subset_list = self.state
             subset_left = subset_list[split_subset_index]
@@ -584,7 +587,7 @@ class MCTSNode:
             )
             node_str_dict_all.update({subset_right: node_string_right})
 
-        return node_child_dict_all, node_str_dict_all
+        return node_child_dict_all, node_str_dict_all, final_splitted_states
 
 
 class MCTS:
@@ -673,8 +676,8 @@ class MCTS:
         with open(file_name, 'wb') as f:
             pickle.dump(self, f)
 
-    def select_final_actions(self, mode, action_id):
-        mcts_empty = MCTS(None)
+    def select_final_actions(self, mode, action_id, TreeEnv):
+        mcts_selected = MCTS(None)
         # mcts_empty.root = deepcopy(self.root)
 
         node_str_dict_all = {}
@@ -693,15 +696,19 @@ class MCTS:
         )
         node_str_dict_all.update({root_state_str: node_string_root})
 
-        node_child_dict_all, node_str_dict_all = self.root.select_action_by_n(level=0, selected_node=None,
-                                                                              node_child_dict_all=node_child_dict_all,
-                                                                              node_str_dict_all=node_str_dict_all,
-                                                                              mother_str=root_state_str)
+        node_child_dict_all, node_str_dict_all, final_splitted_states = \
+            self.root.select_action_by_n(TreeEnv=TreeEnv, level=0, selected_node=None,
+                                         node_child_dict_all=node_child_dict_all,
+                                         node_str_dict_all=node_str_dict_all,
+                                         mother_str=root_state_str)
+        print('\n The final binary tree is:')
         PBT = PrintBinaryTree(node_str_dict_all, node_child_dict_all)
         PBT.print_final_binary_tree(root_state_str, indent_number=0)
 
-        if mcts_empty.root is not None:
-            mcts_empty.save_mcts(mode=mode, current_simulations='@final', action_id=action_id)
+        if mcts_selected.root is not None:
+            mcts_selected.save_mcts(mode=mode, current_simulations='@final', action_id=action_id)
+
+        return final_splitted_states
 
     def pick_action(self):
         """
@@ -915,7 +922,8 @@ def test_mcts(model_dir, TreeEnv, action_id):
     with open(model_dir, 'rb') as f:
         mcts_read = pickle.load(f)
     mcts_read.root.print_tree(TreeEnv)
-    mcts_read.select_final_actions(mode='testing', action_id=action_id)
+    final_splitted_states = mcts_read.select_final_actions(mode='testing', action_id=action_id, TreeEnv=TreeEnv)
+    return final_splitted_states
 
     # TODO: add explanation of transferring latent variables to image
 
@@ -962,7 +970,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
             mcts.root.print_tree(TreeEnv)
 
         print('\n The extracted tree is:')
-        mcts.select_final_actions(mode='single', action_id=action_id)
+        mcts.select_final_actions(mode='single', action_id=action_id, TreeEnv=TreeEnv)
 
         break
 
@@ -1026,6 +1034,6 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
         mcts_origin.root.print_tree(TreeEnv)
 
         print('\n The extracted tree is:')
-        mcts_origin.select_final_actions(mode='parallel', action_id=action_id)
+        mcts_origin.select_final_actions(mode='parallel', action_id=action_id, TreeEnv=TreeEnv)
 
         break

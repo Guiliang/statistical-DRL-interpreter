@@ -1,7 +1,8 @@
 from datetime import datetime
 
 import torch
-
+import numpy as np
+import matplotlib.pyplot as plt
 from mimic_learner.mcts_learner.mcts import execute_episode_parallel, test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
@@ -9,6 +10,7 @@ from PIL import Image
 import torchvision.transforms.functional as ttf
 
 from utils.memory_utils import PrioritizedReplay
+from utils.model_utils import build_decode_input
 
 
 class MimicLearner():
@@ -84,9 +86,28 @@ class MimicLearner():
             self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
 
     def test_mimic_model(self):
+        self.data_loader(1)
+        self.mimic_env.add_data(self.memory)
         for action_id in range(self.action_number):
-            model_dir = "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/MCTS/flappybird/saved_model_plays500.0_2020-03-16-17.pkl"
-            test_mcts(model_dir, TreeEnv=self.mimic_env, action_id=action_id)
+            model_dir = "/Users/liu/PycharmProjects/statistical-DRL-interpreter/mimic_learner/save_tmp/mcts_save_action0_single_plays500.0_2020-03-17-14.pkl"
+            final_splitted_states = test_mcts(model_dir, TreeEnv=self.mimic_env, action_id=action_id)
+            final_splitted_states_avg = []
+            for state in final_splitted_states:
+                state_features = []
+                for data_index in state:
+                    state_features.append(np.concatenate([self.mimic_env.data_all[data_index][0],
+                                                          self.mimic_env.data_all[data_index][3]], axis=0))
+                state_features = np.asarray(state_features)
+                state_features_avg = np.average(state_features, axis=0)
+                z_1 = build_decode_input(state_features_avg[:int(self.mimic_env.n_action_types / 2)])
+                with torch.no_grad():
+                    x_recon_1= self.dientangler.VAE.decode(z_1)
+                plt.figure()
+                plt.imshow(x_recon_1[0].permute(1, 2, 0))
+                plt.show()
+                # x_recon_2 = self.dientangler.VAE.decode(state_features_avg[int(self.mimic_env.n_action_types / 2): ])
+
+                final_splitted_states_avg.append(state_features_avg)
 
     def train_mimic_model(self):
 
