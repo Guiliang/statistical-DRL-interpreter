@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.010  # 0.04 for parallel
+c_PUCT = 0.005  # 0.04 for parallel
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
