@@ -1,15 +1,8 @@
 # Created by .ignore utils plugin (hsz.mobi)
-.idea/misc.xml
-.idea/modules.xml
-.idea/statistical-DRL-interpreter.iml
-.idea/workspace.xml
-*.pyc
-
-.idea/inspectionProfiles/profiles_settings.xml
-.idea/libraries/
+.idea/
 data_disentanglement/__pycache__/
 data_disentanglement/nn_deg/__pycache__/
 mimic_learner/tree_plots/*
-
+*.pyc
 sdl-venv-py37/
 mimic_learner/save_tmp/
