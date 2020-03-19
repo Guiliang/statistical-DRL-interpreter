@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.005  # 0.04 for parallel
+c_PUCT = 0.002  # 0.04 for parallel, 0.005/0.002 for single
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -77,7 +77,8 @@ class MCTSNode:
     environment state.
     """
 
-    def __init__(self, state, n_actions_types, var_list, random_seed, action=None, parent=None):
+    def __init__(self, state, n_actions_types, var_list,
+                 random_seed, action, parent, ignored_dim=[]):
         """
         :param state: State that the node should hold.
         :param n_actions_types: Number of actions that can be performed in each
@@ -117,6 +118,7 @@ class MCTSNode:
 
         self.is_expanded = False
         self.random_seed = random_seed
+        self.ignored_dim = ignored_dim
 
     @property
     def N(self):
@@ -184,21 +186,23 @@ class MCTSNode:
     def child_Q(self, subset_number):
         child_Q_return = []
         for dim in range(self.n_actions_types):
-            child_W_subdim = []
-            child_N_subdim = []
-            for split_values in sorted(self.child_W[subset_number][dim].keys()):
-                child_W_subdim.append(self.child_W[subset_number][dim][split_values])
-                child_N_subdim.append(self.child_N[subset_number][dim][split_values])
-            child_Q_return.append(np.asarray(child_W_subdim) / (1 + np.asarray(child_N_subdim)))
+            if dim not in self.ignored_dim:
+                child_W_subdim = []
+                child_N_subdim = []
+                for split_values in sorted(self.child_W[subset_number][dim].keys()):
+                    child_W_subdim.append(self.child_W[subset_number][dim][split_values])
+                    child_N_subdim.append(self.child_N[subset_number][dim][split_values])
+                child_Q_return.append(np.asarray(child_W_subdim) / (1 + np.asarray(child_N_subdim)))
         return child_Q_return
 
     def child_U(self, subset_number):
         child_U_return = []
         for dim in range(self.n_actions_types):
-            child_N_subdim = []
-            for split_values in sorted(self.child_W[subset_number][dim].keys()):
-                child_N_subdim.append(self.child_N[subset_number][dim][split_values])
-            child_U_return.append(c_PUCT * np.sqrt(math.log(1 + self.N) / (1 + np.asarray(child_N_subdim))))
+            if dim not in self.ignored_dim:
+                child_N_subdim = []
+                for split_values in sorted(self.child_W[subset_number][dim].keys()):
+                    child_N_subdim.append(self.child_N[subset_number][dim][split_values])
+                child_U_return.append(c_PUCT * np.sqrt(math.log(1 + self.N) / (1 + np.asarray(child_N_subdim))))
         return child_U_return
 
     def child_action_score(self, subset_number):
@@ -208,12 +212,20 @@ class MCTSNode:
         """
         child_Q = self.child_Q(subset_number)
         child_U = self.child_U(subset_number)
-        child_action_score_return = []
+
+        max_split_numbers = 0
         for dim in range(len(self.child_N[subset_number])):
-            # self.random_seed += 1
-            noise_U = np.random.normal(child_U[dim], NOISE_VAR)
-            # print("seed is {0} with number {1}".format(self.random_seed, str(list(noise_U))))
-            child_action_score_return.append(child_Q[dim] + noise_U)
+            if dim not in self.ignored_dim and len(child_Q[dim]) > max_split_numbers:
+                max_split_numbers = len(child_Q[dim])
+        child_action_score_return = np.ones(shape=[self.n_actions_types-len(self.ignored_dim), max_split_numbers]) * float('-inf')
+        # child_action_score_return = []
+        for dim in range(self.n_actions_types):
+            if dim not in self.ignored_dim:
+                # self.random_seed += 1
+                noise_U = np.random.normal(child_U[dim], NOISE_VAR)
+                # print("seed is {0} with number {1}".format(self.random_seed, str(list(noise_U))))
+                child_action_score_return[dim, :len(noise_U)] = (child_Q[dim] + noise_U)
+                # child_action_score_return.append((child_Q[dim] + noise_U))
         return child_action_score_return
 
     def select_leaf(self, k, TreeEnv, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
@@ -248,7 +260,7 @@ class MCTSNode:
                 if len(topK_value_index_list) < k:
                     topK_value_index_list += current.split_var_index_dict.get(split_value)
 
-            child_action_score_all = np.ones([len(current.state), self.n_actions_types, dim_per_split]) * float('-inf')
+            child_action_score_all = np.ones([len(current.state), self.n_actions_types-len(self.ignored_dim), dim_per_split]) * float('-inf')
             for j in range(len(current.state)):
                 # if current.subset_split_flag[j]:
                 child_action_score = current.child_action_score(subset_number=j)
@@ -258,11 +270,15 @@ class MCTSNode:
                 try:
                     child_action_score_all[j, :action_score_shape[0], :action_score_shape[1]] = child_action_score
                 except:
-                    print(current.state[j])
                     print(j)
+                    print(action_score_shape)
+                    print(current.state[j])
+                    print(child_action_score)
                     print(current.child_N[j])
                     print(current.child_W[j])
                     print(child_action_score_all)
+                    with open('./tmp_sub_action_score.pkl', 'wb') as f:
+                        pickle.dump(child_action_score, f)
                     raise ValueError("check")
 
             topK_action_score = [child_action_score_all[topK_value_index] for topK_value_index in topK_value_index_list]
@@ -308,82 +324,83 @@ class MCTSNode:
                 else:
                     subset_data = data_line
             for dim in range(split_dimension):
-                split_values = np.sort(subset_data[:, dim])
-                split_gap = len(split_values) / dim_per_split
-                for split_index in range(dim_per_split):
-                    skip_flag = False
-                    split_value = round(float(split_values[int(split_index * split_gap)]), 6)
-                    std_weighted_sum = float(0)
+                if dim not in self.ignored_dim:
+                    split_values = np.sort(subset_data[:, dim])
+                    split_gap = len(split_values) / dim_per_split
+                    for split_index in range(dim_per_split):
+                        skip_flag = False
+                        split_value = round(float(split_values[int(split_index * split_gap)]), 6)
+                        std_weighted_sum = float(0)
 
-                    split_subset_1 = []
-                    split_subset_delta_1 = []
-                    split_subset_2 = []
-                    split_subset_delta_2 = []
-                    for i in range(len(subset)):  # create subsplit
-                        if subset_data[i, dim] < split_value:
-                            split_subset_1.append(subset[i])
-                            split_subset_delta_1.append(reference_data[subset[i]][-1])
+                        split_subset_1 = []
+                        split_subset_delta_1 = []
+                        split_subset_2 = []
+                        split_subset_delta_2 = []
+                        for i in range(len(subset)):  # create subsplit
+                            if subset_data[i, dim] < split_value:
+                                split_subset_1.append(subset[i])
+                                split_subset_delta_1.append(reference_data[subset[i]][-1])
+                            else:
+                                split_subset_2.append(subset[i])
+                                split_subset_delta_2.append(reference_data[subset[i]][-1])
+
+                        new_state = []
+                        for state_index in range(len(self.state)):  # generate new state
+                            if state_index == subset_index:
+                                new_state.append(split_subset_1)
+                                new_state.append(split_subset_2)
+                            else:
+                                new_state.append(self.state[state_index])
+
+                        new_state_list = mcts_state_to_list(new_state)
+
+                        action_new = "{0}_{1}_{2}".format(str(subset_index), str(dim), str(split_value))
+                        if self.check_split_state_pair.get(new_state_list) is not None:
+                            action = self.check_split_state_pair.get(new_state_list)
+                            if action_new != action:
+                                # prevent the duplicated split (different split methods but have the same state)
+                                std_weighted_sum = float('inf')
+                            else:
+                                skip_flag = True
                         else:
-                            split_subset_2.append(subset[i])
-                            split_subset_delta_2.append(reference_data[subset[i]][-1])
+                            self.check_split_state_pair.update({new_state_list: action_new})
 
-                    new_state = []
-                    for state_index in range(len(self.state)):  # generate new state
-                        if state_index == subset_index:
-                            new_state.append(split_subset_1)
-                            new_state.append(split_subset_2)
+                        if len(split_subset_1) == 0 or len(split_subset_2) == 0:
+                            std_weighted_sum = float('inf')  # prevent the empty set
+
+                        if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
+                            if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
+                                mu1, std1 = norm.fit(split_subset_delta_1)
+                                std_weighted_sum += float(len(split_subset_delta_1)) / total_length * std1
+                            if len(split_subset_delta_2) > 0:
+                                mu2, std2 = norm.fit(split_subset_delta_2)
+                                std_weighted_sum += float(len(split_subset_delta_2)) / total_length * std2
+
+                            if not apply_global_variance:
+                                weight_std_reduction = len(subset) / total_length * self.var_list[
+                                    subset_index] - std_weighted_sum
+                            else:
+
+                                for var_index in range(len(self.var_list)):
+                                    if var_index != subset_index:
+                                        std_weighted_sum += float(len(self.state[var_index])) / total_length * \
+                                                            self.var_list[var_index]
+                                weight_std_reduction = original_var - std_weighted_sum
                         else:
-                            new_state.append(self.state[state_index])
+                            weight_std_reduction = -std_weighted_sum
+                        if not skip_flag:
+                            self.child_N[subset_index][dim][split_value] = 0
+                            self.child_W[subset_index][dim][split_value] = weight_std_reduction
 
-                    new_state_list = mcts_state_to_list(new_state)
-
-                    action_new = "{0}_{1}_{2}".format(str(subset_index), str(dim), str(split_value))
-                    if self.check_split_state_pair.get(new_state_list) is not None:
-                        action = self.check_split_state_pair.get(new_state_list)
-                        if action_new != action:
-                            # prevent the duplicated split (different split methods but have the same state)
-                            std_weighted_sum = float('inf')
-                        else:
-                            skip_flag = True
-                    else:
-                        self.check_split_state_pair.update({new_state_list: action_new})
-
-                    if len(split_subset_1) == 0 or len(split_subset_2) == 0:
-                        std_weighted_sum = float('inf')  # prevent the empty set
-
-                    if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
-                        if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
-                            mu1, std1 = norm.fit(split_subset_delta_1)
-                            std_weighted_sum += float(len(split_subset_delta_1)) / total_length * std1
-                        if len(split_subset_delta_2) > 0:
-                            mu2, std2 = norm.fit(split_subset_delta_2)
-                            std_weighted_sum += float(len(split_subset_delta_2)) / total_length * std2
-
-                        if not apply_global_variance:
-                            weight_std_reduction = len(subset) / total_length * self.var_list[
-                                subset_index] - std_weighted_sum
-                        else:
-
-                            for var_index in range(len(self.var_list)):
-                                if var_index != subset_index:
-                                    std_weighted_sum += float(len(self.state[var_index])) / total_length * \
-                                                        self.var_list[var_index]
-                            weight_std_reduction = original_var - std_weighted_sum
-                    else:
-                        weight_std_reduction = -std_weighted_sum
-                    if not skip_flag:
-                        self.child_N[subset_index][dim][split_value] = 0
-                        self.child_W[subset_index][dim][split_value] = weight_std_reduction
-
-                    if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
-                        # the sequence of split value is from small to large
-                        split_value_index = sorted(self.child_W[subset_index][dim]).index(split_value)
-                        if self.split_var_index_dict.get(-std_weighted_sum) is None:
-                            self.split_var_index_dict.update(
-                                {weight_std_reduction: [(subset_index, dim, split_value_index)]})
-                        else:
-                            self.split_var_index_dict.get(weight_std_reduction).append(
-                                (subset_index, dim, split_value_index))
+                        if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
+                            # the sequence of split value is from small to large
+                            split_value_index = sorted(self.child_W[subset_index][dim]).index(split_value)
+                            if self.split_var_index_dict.get(-std_weighted_sum) is None:
+                                self.split_var_index_dict.update(
+                                    {weight_std_reduction: [(subset_index, dim, split_value_index)]})
+                            else:
+                                self.split_var_index_dict.get(weight_std_reduction).append(
+                                    (subset_index, dim, split_value_index))
 
         del self.check_split_state_pair  # release memory
         # print('finish expanding a node')
@@ -404,7 +421,7 @@ class MCTSNode:
             self.children_state_pair.update({new_state_list: action})
             self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
                                               var_list=new_var_list, random_seed=self.random_seed,
-                                             action=action, parent=self)
+                                             action=action, parent=self, ignored_dim=self.ignored_dim)
         return self.children[action]
 
     # def add_virtual_loss(self, up_to):
@@ -622,7 +639,8 @@ class MCTS:
 
     def initialize_search(self, random_seed, init_state, init_var_list, n_action_types):
         self.random_seed = random_seed
-        self.root = MCTSNode(init_state, n_action_types, init_var_list, self.random_seed)
+        self.root = MCTSNode(state=init_state, n_actions_types=n_action_types, var_list=init_var_list,
+            random_seed=self.random_seed, action=None, parent=None, ignored_dim=[])
         # state, n_actions_types, var_list, random_seed
         self.original_var = init_var_list[0]
         self.qs = []
@@ -819,41 +837,42 @@ class PrintBinaryTree:
                 self.print_final_binary_tree(child_str, indent_number + 1)
 
 
-def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
+def iterative_handle_nodes(merged_node, thread_node, origin_node, level, ignored_dim):
     update_sum = 0
     for s_index in range(level):
         assert len(merged_node.child_N) == level
         assert len(thread_node.child_N) == level
         for dim in range(merged_node.n_actions_types):
-            for action in thread_node.child_N[s_index][dim].keys():
-                W_sum = 0
-                N_sum = 0
-                if action in merged_node.child_N[s_index][dim].keys():
-                    if thread_node.child_N[s_index][dim][action] > 0:
-                        W_sum += float(thread_node.child_W[s_index][dim][action])
+            if dim not in ignored_dim:
+                for action in thread_node.child_N[s_index][dim].keys():
+                    W_sum = 0
+                    N_sum = 0
+                    if action in merged_node.child_N[s_index][dim].keys():
+                        if thread_node.child_N[s_index][dim][action] > 0:
+                            W_sum += float(thread_node.child_W[s_index][dim][action])
+                            N_sum += thread_node.child_N[s_index][dim][action]
+                        if merged_node.child_N[s_index][dim][action] > 0:
+                            W_sum += float(merged_node.child_W[s_index][dim][action])
+                            N_sum += merged_node.child_N[s_index][dim][action]
+                        if origin_node is not None:
+                            if action in origin_node.child_N[s_index][dim].keys():
+                                if origin_node.child_N[s_index][dim][action] > 0:
+                                    W_sum -= float(origin_node.child_W[s_index][dim][action])
+                                    N_sum -= origin_node.child_N[s_index][dim][action]
+                        if W_sum > 0:
+                            merged_node.child_W[s_index][dim][action] = W_sum
+                        if N_sum > 0:
+                            merged_node.child_N[s_index][dim][action] = N_sum
+                    else:
+                        W_sum += thread_node.child_W[s_index][dim][action]
                         N_sum += thread_node.child_N[s_index][dim][action]
-                    if merged_node.child_N[s_index][dim][action] > 0:
-                        W_sum += float(merged_node.child_W[s_index][dim][action])
-                        N_sum += merged_node.child_N[s_index][dim][action]
-                    if origin_node is not None:
-                        if action in origin_node.child_N[s_index][dim].keys():
-                            if origin_node.child_N[s_index][dim][action] > 0:
-                                W_sum -= float(origin_node.child_W[s_index][dim][action])
-                                N_sum -= origin_node.child_N[s_index][dim][action]
-                    if W_sum > 0:
+                        if origin_node is not None:
+                            if action in origin_node.child_N[s_index][dim].keys():
+                                if origin_node.child_N[s_index][dim][action] > 0:
+                                    W_sum -= float(origin_node.child_W[s_index][dim][action])
+                                    N_sum -= origin_node.child_N[s_index][dim][action]
                         merged_node.child_W[s_index][dim][action] = W_sum
-                    if N_sum > 0:
                         merged_node.child_N[s_index][dim][action] = N_sum
-                else:
-                    W_sum += thread_node.child_W[s_index][dim][action]
-                    N_sum += thread_node.child_N[s_index][dim][action]
-                    if origin_node is not None:
-                        if action in origin_node.child_N[s_index][dim].keys():
-                            if origin_node.child_N[s_index][dim][action] > 0:
-                                W_sum -= float(origin_node.child_W[s_index][dim][action])
-                                N_sum -= origin_node.child_N[s_index][dim][action]
-                    merged_node.child_W[s_index][dim][action] = W_sum
-                    merged_node.child_N[s_index][dim][action] = N_sum
     if origin_node is not None:
         all(map(thread_node.children_state_pair.pop, origin_node.children_state_pair))
     merged_node.children_state_pair.update(thread_node.children_state_pair)
@@ -872,7 +891,7 @@ def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
             update_sum += iterative_handle_nodes(merged_node.children[thread_child_action],
                                                  thread_node.children[thread_child_action],
                                                  origin_node_child,
-                                                 level + 1)
+                                                 level + 1, ignored_dim)
         else:
             if origin_node is not None:
                 assert thread_child_action not in origin_node.children.keys()
@@ -880,7 +899,7 @@ def iterative_handle_nodes(merged_node, thread_node, origin_node, level):
     return update_sum + 1
 
 
-def merge_mcts(mcts_threads, mcts_origin):
+def merge_mcts(mcts_threads, mcts_origin, ignored_dim):
     mcts_merged = mcts_threads[0]
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
     # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].W)
@@ -899,7 +918,7 @@ def merge_mcts(mcts_threads, mcts_origin):
                 thread_node.child_W[action] + merged_node.child_W[action] - origin_node.child_W[action])
             # (thread_node.child_N[action] + merged_node.child_N[action])
             merged_node.child_N[action] += (thread_node.child_N[action] - origin_node.child_N[action])
-        update_sum = iterative_handle_nodes(mcts_merged.root, mcts_threads[i].root, mcts_origin.root, level + 1)
+        update_sum = iterative_handle_nodes(mcts_merged.root, mcts_threads[i].root, mcts_origin.root, level + 1, ignored_dim)
         # print(mcts_threads[i].root.Q)
         # print(list(mcts_merged.root.children.keys())[0])
         # print(mcts_merged.root.children[list(mcts_merged.root.children.keys())[1]].Q)
@@ -977,7 +996,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
 
 
 def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
-                             mcts_saved_dir, max_k, init_state, init_var_list, action_id):
+                             mcts_saved_dir, max_k, init_state, init_var_list, action_id, ignored_dim):
     tracemalloc.start()
     from tqdm import tqdm
     pbar = tqdm(total=num_simulations)
@@ -1021,7 +1040,7 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
             mcts_results = [p.get() for p in results]
             mcts_threads = [results[0] for results in mcts_results]
             avg_timer_record = mcts_results[0][1]
-            mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin)
+            mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin, ignored_dim)
             end_time = time.time()
             print('multithread time is {0}'.format(str(end_time - start_time)))
             current_simulations = mcts_threads[0].root.parent.child_N[None]

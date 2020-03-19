@@ -118,3 +118,23 @@ def store_state_action_data(img_colored, action_values, reward, action_index,
     tu.save_image(x_t_b_save,
                   open(save_image_path + 'binary/images/' + game_name + '-' + str(iteration_number) + '_binary.png',
                        'wb'))
+
+def compute_latent_importance(gif_tensor, sample_dimension,
+                              inter_dimension, latent_dimension,
+                              image_width, image_length):
+    dim_diff_dict = {}
+    for k in range(latent_dimension):
+        image_dim_diff_sum = torch.zeros([3, image_length, image_width])
+        for i in range(sample_dimension):
+            latent_images = gif_tensor[i,:,k]
+            for j in range(inter_dimension):
+                for m in range(1, inter_dimension-j):
+                    image_diff = latent_images[j]-latent_images[j + m]
+                    image_dim_diff_sum+=image_diff.abs().cpu()
+
+        # print('Sum Diff of dim {0} is {1}'.format(str(k), image_dim_diff_sum.sum().numpy()))
+        dim_diff_dict.update({k: image_dim_diff_sum.sum().numpy()})
+
+    sorted_dim_imporatence = sorted(dim_diff_dict.items(), key=lambda kv: kv[1], reverse=True)
+    for value in sorted_dim_imporatence:
+        print('Sum Diff of dim {0} is {1}'.format(value[0], value[1]))

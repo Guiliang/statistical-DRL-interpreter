@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torchvision.utils import make_grid, save_image
 
 from utils.general_utils import DataGather, mkdirs, grid2gif, return_data
-from utils.model_utils import recon_loss, kl_divergence, permute_dims
+from utils.model_utils import recon_loss, kl_divergence, permute_dims, compute_latent_importance
 from data_disentanglement.nn_deg.fvae_model import FactorVAE1, FactorVAE2, Discriminator
 
 
@@ -131,7 +131,18 @@ class Disentanglement(object):
         self.pbar.write("[Training Finished]")
         self.pbar.close()
 
-    def visualize_traverse(self, image_length, image_width, limit=3, inter=2 / 3, loc=-1):
+
+    def test(self, testing_output_dir):
+        self.load_checkpoint()
+        self.visualize_traverse(image_length=self.image_length,
+                                image_width=self.image_width,
+                                limit=3, inter=2 / 3,
+                                testing_output_dir=testing_output_dir)
+
+    def visualize_traverse(self,
+                           image_length, image_width,
+                           limit=3, inter=2 / 3, loc=-1,
+                           testing_output_dir=None):
         self.net_mode(train=False)
 
         decoder = self.VAE.decode
@@ -146,14 +157,8 @@ class Disentanglement(object):
             fixed_idx = 111
             fixed_img = self.data_loader.dataset.__getitem__(fixed_idx)[0]
 
-            # import matplotlib.pyplot as plt
-            # x_t_image = fixed_img.numpy()
-            # plt.figure()
-            # plt.imshow(x_t_image[0])
-
             fixed_img = fixed_img.to(self.device).unsqueeze(0)
             fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
-
             random_z = torch.rand(1, self.z_dim, 1, 1, device=self.device)
 
             Z = {'fixed_img': fixed_img_z, 'random_img': random_img_z, 'random_z': random_z}
@@ -173,12 +178,20 @@ class Disentanglement(object):
                     gifs.append(sample)
             # samples = torch.cat(samples, dim=0).cpu()
             # title = '{}_latent_traversal(iter:{})'.format(key, self.global_iter)
-
+        output_dir = None
         if self.output_save:
             output_dir = os.path.join(self.output_dir, str(self.global_iter))
+        if testing_output_dir is not None:
+            output_dir = testing_output_dir
+        if output_dir is not None:
             mkdirs(output_dir)
             gifs = torch.cat(gifs)
             gifs = gifs.view(len(Z), self.z_dim, len(interpolation), self.nc, image_length, image_width).transpose(1, 2)
+
+            compute_latent_importance(gif_tensor=gifs, sample_dimension=len(Z.keys()),
+                                      inter_dimension=len(interpolation), latent_dimension=self.z_dim,
+                                      image_width=image_width, image_length=image_length)
+
             for i, key in enumerate(Z.keys()):
                 for j, val in enumerate(interpolation):
                     save_image(tensor=gifs[i][j].cpu(),
