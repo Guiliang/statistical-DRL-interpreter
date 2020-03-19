@@ -622,7 +622,8 @@ class MCTS:
 
     def initialize_search(self, random_seed, init_state, init_var_list, n_action_types):
         self.random_seed = random_seed
-        self.root = MCTSNode(init_state, n_action_types, self.TreeEnv, init_var_list, self.random_seed)
+        self.root = MCTSNode(init_state, n_action_types, init_var_list, self.random_seed)
+        # state, n_actions_types, var_list, random_seed
         self.original_var = init_var_list[0]
         self.qs = []
         self.rewards = []
