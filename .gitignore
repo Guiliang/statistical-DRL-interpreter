@@ -6,3 +6,4 @@ mimic_learner/tree_plots/*
 *.pyc
 sdl-venv-py37/
 mimic_learner/save_tmp/
+data_disentanglement/output/*
