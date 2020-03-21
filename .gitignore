@@ -7,3 +7,4 @@ mimic_learner/tree_plots/*
 sdl-venv-py37/
 mimic_learner/save_tmp/
 data_disentanglement/output/*
+interface/logs/*
