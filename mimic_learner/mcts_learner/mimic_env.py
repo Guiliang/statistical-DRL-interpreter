@@ -31,28 +31,30 @@ class MimicEnv(StaticEnv):
         self.initial_std = std
 
     def reset(self):
-        self.pos = (6, 0)
-        self.step_idx = 0
-        state = self.pos[0] * self.shape[0] + self.pos[1]
-        return state, 0, False, None
+        pass
+        # self.pos = (6, 0)
+        # self.step_idx = 0
+        # state = self.pos[0] * self.shape[0] + self.pos[1]
+        # return state, 0, False, None
 
     def step(self, action):
-        self.step_idx += 1
-        alt_before = self.altitudes[self.pos[0]][self.pos[1]]
-        if action == UP:
-            self.pos = (self.pos[0] - 1, self.pos[1])
-        if action == DOWN:
-            self.pos = (self.pos[0] + 1, self.pos[1])
-        if action == LEFT:
-            self.pos = (self.pos[0], self.pos[1] - 1)
-        if action == RIGHT:
-            self.pos = (self.pos[0], self.pos[1] + 1)
-        self.pos = self._limit_coordinates(self.pos, self.shape)
-        alt_after = self.altitudes[self.pos[0]][self.pos[1]]
-        reward = alt_after - alt_before - 0.5  # -0.5 for encouraging speed
-        state = self.pos[0] * self.shape[0] + self.pos[1]
-        done = self.pos == (0, 6) or self.step_idx == self.ep_length
-        return state, reward, done, None
+        pass
+        # self.step_idx += 1
+        # alt_before = self.altitudes[self.pos[0]][self.pos[1]]
+        # if action == UP:
+        #     self.pos = (self.pos[0] - 1, self.pos[1])
+        # if action == DOWN:
+        #     self.pos = (self.pos[0] + 1, self.pos[1])
+        # if action == LEFT:
+        #     self.pos = (self.pos[0], self.pos[1] - 1)
+        # if action == RIGHT:
+        #     self.pos = (self.pos[0], self.pos[1] + 1)
+        # self.pos = self._limit_coordinates(self.pos, self.shape)
+        # alt_after = self.altitudes[self.pos[0]][self.pos[1]]
+        # reward = alt_after - alt_before - 0.5  # -0.5 for encouraging speed
+        # state = self.pos[0] * self.shape[0] + self.pos[1]
+        # done = self.pos == (0, 6) or self.step_idx == self.ep_length
+        # return state, reward, done, None
 
     def next_state(self, state, action, parent_var_list=None):
         action_values = action.split('_')
@@ -123,7 +125,7 @@ class MimicEnv(StaticEnv):
     def get_obs_for_states(states):
         return np.array(states)
 
-    def get_return(self, state, step_idx):
+    def get_return(self, state, step_idx=None):
         std_weighted_sum = 0
         subsection_lengths = [len(subsection) for subsection in state]
         total_length = float(sum(subsection_lengths))
@@ -139,18 +141,6 @@ class MimicEnv(StaticEnv):
         # TODO: punish the split number
         return self.initial_std - std_weighted_sum
 
-    @staticmethod
-    def _limit_coordinates(coord, shape):
-        """
-        Prevent the agent from falling out of the grid world.
-        Adapted from https://github.com/openai/gym/blob/master/gym/envs/toy_text/cliffwalking.py
-        """
-        coord = list(coord)
-        coord[0] = min(coord[0], shape[0] - 1)
-        coord[0] = max(coord[0], 0)
-        coord[1] = min(coord[1], shape[1] - 1)
-        coord[1] = max(coord[1], 0)
-        return tuple(coord)
 
 
 if __name__ == '__main__':

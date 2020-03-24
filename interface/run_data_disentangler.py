@@ -27,7 +27,7 @@ def run():
 
     DEG = Disentanglement(config=flappybird_config, global_model_data_path=global_model_data_path)
     # DEG.train()
-    DEG.test(testing_output_dir='../data_disentanglement/output/')
+    DEG.test(testing_output_dir='../data_disentanglement/output/flappybird/')
 
 
 if __name__ == "__main__":

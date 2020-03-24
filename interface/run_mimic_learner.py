@@ -31,7 +31,7 @@ def run():
                                  local_test_flag=local_test_flag,
                                  global_model_data_path=global_model_data_path)
     # mimic_learner.test_mimic_model()
-    mimic_learner.train_mimic_model()
+    mimic_learner.train_mimic_model(method='mcts')
 
 
 if __name__ == "__main__":

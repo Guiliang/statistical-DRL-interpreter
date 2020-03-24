@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -123,18 +124,39 @@ def compute_latent_importance(gif_tensor, sample_dimension,
                               inter_dimension, latent_dimension,
                               image_width, image_length):
     dim_diff_dict = {}
+    masked_gif_tensor = None
     for k in range(latent_dimension):
         image_dim_diff_sum = torch.zeros([3, image_length, image_width])
+        image_number = 0
         for i in range(sample_dimension):
             latent_images = gif_tensor[i,:,k]
             for j in range(inter_dimension):
                 for m in range(1, inter_dimension-j):
-                    image_diff = latent_images[j]-latent_images[j + m]
+                    image_diff = latent_images[j]-latent_images[j + m]  # TODO: maybe try grey and binary image
                     image_dim_diff_sum+=image_diff.abs().cpu()
+                    image_number += 1
 
         # print('Sum Diff of dim {0} is {1}'.format(str(k), image_dim_diff_sum.sum().numpy()))
-        dim_diff_dict.update({k: image_dim_diff_sum.sum().numpy()})
+        image_dim_diff_average = image_dim_diff_sum[0]/image_number
+        dim_diff_dict.update({k: np.sum(image_dim_diff_average.numpy())})
+        image_dim_mask = image_dim_diff_average > 0.1
+        # tmp = torch.ones(image_dim_mask.size()) - image_dim_mask.double()
+        # tmp=tmp.numpy()
+        # print(tmp)
+        images_dim_mask = image_dim_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0).repeat(sample_dimension, inter_dimension, 3, 1, 1)
+        dim_gif_tensor = gif_tensor[:, :, k].cpu()
+        masked_dim_gif_tensor = torch.mul(dim_gif_tensor, images_dim_mask)
+        # tmp =masked_dim_gif_tensor.numpy()
+        gray_mask = (torch.ones(images_dim_mask.size())-images_dim_mask.double())*0.5
+        masked_dim_gif_tensor +=gray_mask
+        if masked_gif_tensor is None:
+            masked_gif_tensor = masked_dim_gif_tensor.unsqueeze(2)
+        else:
+            masked_gif_tensor = torch.cat([masked_gif_tensor, masked_dim_gif_tensor.unsqueeze(2)], 2)
+
 
     sorted_dim_imporatence = sorted(dim_diff_dict.items(), key=lambda kv: kv[1], reverse=True)
     for value in sorted_dim_imporatence:
         print('Sum Diff of dim {0} is {1}'.format(value[0], value[1]))
+
+    return masked_gif_tensor

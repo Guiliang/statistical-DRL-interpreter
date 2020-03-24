@@ -120,8 +120,7 @@ class Disentanglement(object):
 
                 if self.global_iter % self.viz_ta_iter == 0:
                     self.visualize_traverse(image_length=self.image_length,
-                                            image_width=self.image_width,
-                                            limit=3, inter=2 / 3)
+                                            image_width=self.image_width)
 
                 if self.global_iter >= self.max_iter:
                     out = True
@@ -133,21 +132,45 @@ class Disentanglement(object):
 
 
     def test(self, testing_output_dir):
-        self.load_checkpoint()
-        self.visualize_traverse(image_length=self.image_length,
-                                image_width=self.image_width,
-                                limit=3, inter=2 / 3,
-                                testing_output_dir=testing_output_dir)
+        model_name = 'FVAE-1000000'
+        self.load_checkpoint(ckptname=model_name, testing_flag=True)
+        with torch.no_grad():
+            self.visualize_traverse(image_length=self.image_length,
+                                    image_width=self.image_width,
+                                    testing_output_dir=testing_output_dir,
+                                    model_name=model_name)
 
     def visualize_traverse(self,
-                           image_length, image_width,
-                           limit=3, inter=2 / 3, loc=-1,
-                           testing_output_dir=None):
+                           image_length, image_width, inter_number=10,
+                           testing_output_dir=None, model_name='FVAE'):
         self.net_mode(train=False)
 
         decoder = self.VAE.decode
         encoder = self.VAE.encode
-        interpolation = torch.arange(-limit, limit + 0.1, inter)
+
+        z_checked_all = None
+        total_checking_number = 1000
+        for data in self.data_loader:
+            input_images = data[0].to(self.device)
+            # tmp = input_images.cpu().numpy()
+            z_output = encoder(input_images)[:, :self.z_dim]
+            if z_checked_all is None:
+                z_checked_all = z_output
+            else:
+                z_checked_all = torch.cat([z_checked_all, z_output], dim=0)
+            # tmp = z_checked_all.size()[0]
+            if z_checked_all.size()[0] > total_checking_number:
+                break
+        dim_minmax_tuple_list = []
+        dim_interpolation_list = []
+        for k in range(self.z_dim):
+            total_dim_data = z_checked_all[:, k, :, :]
+            dim_max = float(torch.max(total_dim_data).cpu().numpy())
+            dim_min = float(torch.min(total_dim_data).cpu().numpy())
+            dim_minmax_tuple_list.append((dim_min, dim_max))
+            inter = float(dim_max-dim_min)/inter_number
+            interpolation = torch.arange(dim_min, dim_max, float(dim_max-dim_min)/inter_number)
+            dim_interpolation_list.append(interpolation)
 
         random_img = self.data_loader.dataset.__getitem__(0)[1]
         random_img = random_img.to(self.device).unsqueeze(0)
@@ -167,12 +190,10 @@ class Disentanglement(object):
         for key in Z:
             z_ori = Z[key]
             # samples = []
-            for row in range(self.z_dim):
-                if loc != -1 and row != loc:
-                    continue
+            for k in range(self.z_dim):
                 z = z_ori.clone()
-                for val in interpolation:
-                    z[:, row] = val
+                for val in dim_interpolation_list[k]:
+                    z[:, k] = val
                     sample = F.sigmoid(decoder(z)).data
                     # samples.append(sample)
                     gifs.append(sample)
@@ -184,22 +205,27 @@ class Disentanglement(object):
         if testing_output_dir is not None:
             output_dir = testing_output_dir
         if output_dir is not None:
-            mkdirs(output_dir)
+            mkdirs(output_dir+'images/')
             gifs = torch.cat(gifs)
-            gifs = gifs.view(len(Z), self.z_dim, len(interpolation), self.nc, image_length, image_width).transpose(1, 2)
+            gifs = gifs.view(len(Z), self.z_dim, inter_number, self.nc, image_length, image_width).transpose(1, 2)
 
-            compute_latent_importance(gif_tensor=gifs, sample_dimension=len(Z.keys()),
-                                      inter_dimension=len(interpolation), latent_dimension=self.z_dim,
+            masked_gif_tensor = compute_latent_importance(gif_tensor=gifs, sample_dimension=len(Z.keys()),
+                                      inter_dimension=inter_number, latent_dimension=self.z_dim,
                                       image_width=image_width, image_length=image_length)
 
             for i, key in enumerate(Z.keys()):
-                for j, val in enumerate(interpolation):
+                for j in range(inter_number):
                     save_image(tensor=gifs[i][j].cpu(),
-                               fp=os.path.join(output_dir, '{}_{}.jpg'.format(key, j)),
+                               fp=os.path.join(output_dir+'images/', '{0}_{1}_{2}_origin.jpg'.format(model_name, key, j)),
                                nrow=self.z_dim, pad_value=1)
+                    save_image(tensor=masked_gif_tensor[i][j],
+                               fp=os.path.join(output_dir+'images/', '{0}_{1}_{2}_masked.jpg'.format(model_name, key, j)),
+                               nrow=self.z_dim, pad_value=1)
+                grid2gif(str(os.path.join(output_dir+'images/', model_name+'_'+key + '*_origin.jpg')),
+                         str(os.path.join(output_dir, model_name+'_'+key + '_origin.gif')), delay=10)
 
-                grid2gif(str(os.path.join(output_dir, key + '*.jpg')),
-                         str(os.path.join(output_dir, key + '.gif')), delay=10)
+                grid2gif(str(os.path.join(output_dir+'images/', model_name+'_'+key + '*_masked.jpg')),
+                         str(os.path.join(output_dir, model_name+'_'+key + '_masked.gif')), delay=10)
 
         self.net_mode(train=True)
 
@@ -228,7 +254,7 @@ class Disentanglement(object):
         if verbose:
             self.pbar.write("=> saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
 
-    def load_checkpoint(self, ckptname='last', verbose=True):
+    def load_checkpoint(self, ckptname='last', verbose=True, testing_flag=False):
 
         if ckptname == 'last':
             ckpts = os.listdir(self.ckpt_dir)
@@ -241,7 +267,8 @@ class Disentanglement(object):
             ckpts.sort(reverse=True)
             ckptname = 'FVAE-' + str(ckpts[0])
         from tqdm import tqdm
-        self.pbar = tqdm(total=self.max_iter)
+        if not testing_flag:
+            self.pbar = tqdm(total=self.max_iter)
         filepath = os.path.join(self.ckpt_dir, ckptname)
         if os.path.isfile(filepath):
             with open(filepath, 'rb') as f:
@@ -252,9 +279,10 @@ class Disentanglement(object):
             self.D.load_state_dict(checkpoint['model_states']['D'])
             self.optim_VAE.load_state_dict(checkpoint['optim_states']['optim_VAE'])
             self.optim_D.load_state_dict(checkpoint['optim_states']['optim_D'])
-            self.pbar.update(self.global_iter)
+            if not testing_flag:
+                self.pbar.update(self.global_iter)
             if verbose:
-                self.pbar.write("=> loaded checkpoint '{} (iter {})'".format(filepath, self.global_iter))
+                print("=> loaded checkpoint '{} (iter {})'".format(filepath, self.global_iter))
         else:
             if verbose:
-                self.pbar.write("=> no checkpoint found at '{}'".format(filepath))
+                print("=> no checkpoint found at '{}'".format(filepath))

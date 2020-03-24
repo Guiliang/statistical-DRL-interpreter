@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import ast
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +8,7 @@ from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
 from PIL import Image
 import torchvision.transforms.functional as ttf
+from mimic_learner.comparsion_learners.cart import RegressionTree
 
 from utils.memory_utils import PrioritizedReplay
 from utils.model_utils import build_decode_input
@@ -39,6 +40,8 @@ class MimicLearner():
 
         self.mcst_saved_dir = "" if local_test_flag else config.Mimic.Learn.saved_dir
         self.max_k = config.Mimic.Learn.max_k
+        self.ignored_dim = ast.literal_eval(config.Mimic.Learn.ignore_dim)
+        print("Ignored dim is {0}".format(config.Mimic.Learn.ignore_dim))
 
     def data_loader(self, episode_number):
 
@@ -109,7 +112,7 @@ class MimicLearner():
 
                 final_splitted_states_avg.append(state_features_avg)
 
-    def train_mimic_model(self):
+    def train_mimic_model(self, method):
 
         # for episode_number in range(1, 100):
         self.data_loader(1)
@@ -118,14 +121,30 @@ class MimicLearner():
             for action_id in range(self.action_number):
                 print('\nCurrent action is {0}'.format(action_id))
                 init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-                with open('../mimic_learner/tree_plots/tree_plot_{0}_action{1}.txt'
-                                  .format(datetime.today().strftime('%Y-%m-%d-%H'), action_id), 'w') as tree_writer:
-                    execute_episode_single(num_simulations=self.num_simulations,
-                                           TreeEnv=self.mimic_env,
-                                           tree_writer=tree_writer,
-                                           mcts_saved_dir=self.global_model_data_path + self.mcst_saved_dir,
-                                           max_k=self.max_k,
-                                           init_state=init_state,
-                                           init_var_list=init_var_list,
-                                           action_id=action_id
-                                           )
+                with open('../mimic_learner/tree_plots/{0}_tree_plot_{1}_action{2}.txt'
+                                  .format(method, datetime.today().strftime('%Y-%m-%d-%H'),
+                                          action_id), 'w') as tree_writer:
+                    if method == 'mcts':
+                        execute_episode_single(num_simulations=self.num_simulations,
+                                               TreeEnv=self.mimic_env,
+                                               tree_writer=tree_writer,
+                                               mcts_saved_dir=self.global_model_data_path + self.mcst_saved_dir,
+                                               max_k=self.max_k,
+                                               init_state=init_state,
+                                               init_var_list=init_var_list,
+                                               action_id=action_id,
+                                               ignored_dim=self.ignored_dim,
+                                               apply_split_parallel=True
+                                               )
+                    elif method == 'cart':
+                        training_data = [[],[]]
+                        for data_index in init_state[0]:
+                            data_input = np.concatenate([self.memory[data_index][0], self.memory[data_index][3]],axis=0)
+                            data_output = self.memory[data_index][4]
+                            training_data[0].append(data_input)
+                            training_data[1].append(data_output)
+                        cart = RegressionTree(training_data=training_data, mimic_env = self.mimic_env)
+                        cart.train()
+                    else:
+                        raise ValueError('Unknown method {0}'.format(method))
+
