@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.003  # 0.04 for parallel, 0.005/0.002 for single
+c_PUCT = 0.01  # 0.04 for parallel, 0.005/0.002 for single
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -1130,6 +1130,8 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                            mcts_saved_dir, max_k, init_state,
                            init_var_list, action_id, ignored_dim, apply_split_parallel=False):
 
+    print('CPUCT is {0}'.format(c_PUCT))
+
 
     if apply_split_parallel:
         global SPLIT_POOL
@@ -1140,7 +1142,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
     pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
 
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=50)
+    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=200)
     # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
     mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,

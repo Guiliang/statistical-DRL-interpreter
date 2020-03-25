@@ -272,7 +272,10 @@ class Disentanglement(object):
         filepath = os.path.join(self.ckpt_dir, ckptname)
         if os.path.isfile(filepath):
             with open(filepath, 'rb') as f:
-                checkpoint = torch.load(f)
+                if torch.cuda.is_available():
+                    checkpoint = torch.load(f)
+                else:
+                    checkpoint = torch.load(f, map_location=torch.device('cpu'))
 
             self.global_iter = checkpoint['iter']
             self.VAE.load_state_dict(checkpoint['model_states']['VAE'])
