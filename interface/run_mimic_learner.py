@@ -10,21 +10,26 @@ from mimic_learner.learner import MimicLearner
 def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    flappybird_config_path = "../environment_settings/flappybird_config.yaml"
-    flappybird_config = FlappyBirdConfig.load(flappybird_config_path)
 
     local_test_flag = False
     if local_test_flag:
+        flappybird_config_path = "../environment_settings/flappybird_config.yaml"
+        flappybird_config = FlappyBirdConfig.load(flappybird_config_path)
         flappybird_config.DEG.FVAE.dset_dir = '../example_data'
         global_model_data_path = ''
         flappybird_config.Mimic.Learn.episodic_sample_number = 49
     elif os.path.exists("/Local-Scratch/oschulte/Galen"):
+        flappybird_config_path = "../environment_settings/flappybird_config.yaml"
+        flappybird_config = FlappyBirdConfig.load(flappybird_config_path)
         global_model_data_path = "/Local-Scratch/oschulte/Galen"
     elif os.path.exists("/home/functor/scratch/Galen/project-DRL-Interpreter"):
+        flappybird_config_path = "/home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/environment_settings/flappybird_config.yaml"
+        flappybird_config = FlappyBirdConfig.load(flappybird_config_path)
         global_model_data_path = "/home/functor/scratch/Galen/project-DRL-Interpreter"
     else:
         raise EnvironmentError("Unknown running setting, please set up your own environment")
-
+    
+    print('global path is : {0}'.format(global_model_data_path))
 
     mimic_learner = MimicLearner(game_name='flappybird',
                                  config=flappybird_config,
