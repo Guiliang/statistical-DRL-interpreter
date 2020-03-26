@@ -922,11 +922,7 @@ class MCTS:
         return action
 
     def take_action(self, action, TreeEnv):
-        """
-        Takes the specified action for the root state. The subsequent child
-        state becomes the new root state of the tree.
-        :param action: Action to take for the root state.
-        """
+        # TODO: we need this method, maybe
         # Store data to be used as experience tuples.
         ob = self.TreeEnv.get_obs_for_states([self.root.state])
         self.obs.append(ob)
