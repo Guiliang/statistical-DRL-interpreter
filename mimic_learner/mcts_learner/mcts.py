@@ -81,7 +81,7 @@ class MCTSNode:
     """
 
     def __init__(self, state, n_actions_types, var_list,
-                 random_seed, action, parent, ignored_dim=[]):
+                 random_seed, action, parent, level, ignored_dim=[]):
         """
         :param state: State that the node should hold.
         :param n_actions_types: Number of actions that can be performed in each
@@ -122,6 +122,7 @@ class MCTSNode:
         self.is_expanded = False
         self.random_seed = random_seed
         self.ignored_dim = ignored_dim
+        self.level = level
 
     @property
     def N(self):
@@ -599,7 +600,8 @@ class MCTSNode:
             self.children_state_pair.update({new_state_list: action})
             self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
                                               var_list=new_var_list, random_seed=self.random_seed,
-                                             action=action, parent=self, ignored_dim=self.ignored_dim)
+                                             action=action, parent=self, level=self.level+1,
+                                             ignored_dim=self.ignored_dim)
         return self.children[action]
 
     # def add_virtual_loss(self, up_to):
@@ -695,13 +697,13 @@ class MCTSNode:
     #         probs = probs ** .95
     #     return probs / np.sum(probs)
 
-    def print_tree(self, TreeEnv, writer=None, level=0):
+    def print_tree(self, TreeEnv, writer=None, print_indent=0):
         return_value = TreeEnv.get_return(self.state, self.depth)
         # node_string = "\033[94m|" + "----" * level
-        node_string = "----" * level
+        node_string = "----" * print_indent
         # node_string += "Node: action={0}, N={1}, Q={2}, " \
         #                "return={3}|\033[0m".format(self.action, self.N, round(self.Q, 6), round(return_value, 6))
-        node_string += "Level{0}|Node: action={1}, N={2}, Q={3}, U={4}, return={5}|".format(level, self.action, self.N,
+        node_string += "Level{0}|Node: action={1}, N={2}, Q={3}, U={4}, return={5}|".format(self.level, self.action, self.N,
                                                                                     round(self.Q, 6), round(self.U, 6),
                                                                                     return_value, self.state)
 
@@ -710,11 +712,11 @@ class MCTSNode:
         if writer is not None:
             writer.write(node_string + "\n")
         for _, child in sorted(self.children.items()):
-            child.print_tree(TreeEnv, writer, level + 1)
+            child.print_tree(TreeEnv, writer, print_indent + 1)
 
     def select_action_by_n(self, TreeEnv, level=0, selected_node=None,
                            node_child_dict_all=None, node_str_dict_all=None,
-                           mother_str=None):
+                           mother_str=None, if_iterates_till_leaf=False):
         child_actions = []
         child_visit_number = []
         for action, child in sorted(self.children.items()):
@@ -744,13 +746,18 @@ class MCTSNode:
 
             selected_split_subset_index = int(selected_action.split('_')[0])
             mother_str_child = ','.join(list(map(str, self.state[selected_split_subset_index])))
-            node_child_dict_all, node_str_dict_all, final_splitted_states = \
-                self.children[selected_action].select_action_by_n(TreeEnv=TreeEnv,
-                                                                  level=level + 1,
-                                                                  selected_node=next_selected_node,
-                                                                  node_child_dict_all=node_child_dict_all,
-                                                                  node_str_dict_all=node_str_dict_all,
-                                                                  mother_str=mother_str_child)
+
+            if if_iterates_till_leaf:
+                _, _, node_child_dict_all, node_str_dict_all, final_splitted_states = \
+                    self.children[selected_action].select_action_by_n(TreeEnv=TreeEnv,
+                                                                      level=level + 1,
+                                                                      selected_node=next_selected_node,
+                                                                      node_child_dict_all=node_child_dict_all,
+                                                                      node_str_dict_all=node_str_dict_all,
+                                                                      mother_str=mother_str_child,
+                                                                      if_iterates_till_leaf=if_iterates_till_leaf)
+            else:
+                final_splitted_states = self.state
         else:
             final_splitted_states = self.state
 
@@ -782,7 +789,7 @@ class MCTSNode:
             )
             node_str_dict_all.update({subset_right: node_string_right})
 
-        return node_child_dict_all, node_str_dict_all, final_splitted_states
+        return selected_action, child_visit_probability, node_child_dict_all, node_str_dict_all, final_splitted_states,
 
 
 class MCTS:
@@ -806,25 +813,32 @@ class MCTS:
         self.num_parallel = num_per_parallel
         self.temp_threshold = None  # Overwritten in initialize_search
 
-        self.qs = []
-        self.rewards = []
-        self.searches_pi = []
-        self.obs = []
+        self.qs = None
+        self.rewards = None
+        self.searches_pi = None
+        self.moved_nodes = None
+        self.states = None
 
         self.root = None
         self.original_var = None
         self.random_seed = None
 
+        self.moved_node_str_dict_all = None
+        self.moved_node_child_dict_all = None
+
     def initialize_search(self, random_seed, init_state, init_var_list, n_action_types, ignored_dim):
         self.random_seed = random_seed
         self.root = MCTSNode(state=init_state, n_actions_types=n_action_types, var_list=init_var_list,
-            random_seed=self.random_seed, action=None, parent=None, ignored_dim=ignored_dim)
+            random_seed=self.random_seed, action=None, parent=None, level=1, ignored_dim=ignored_dim)
         # state, n_actions_types, var_list, random_seed
         self.original_var = init_var_list[0]
         self.qs = []
         self.rewards = []
         self.searches_pi = []
-        self.obs = []
+        self.moved_nodes = []
+        self.states = []
+        self.moved_node_str_dict_all = {}
+        self.moved_node_child_dict_all = {}
 
     def tree_search(self, k, original_var, avg_timer_record, TreeEnv):
         """
@@ -893,11 +907,12 @@ class MCTS:
         )
         node_str_dict_all.update({root_state_str: node_string_root})
 
-        node_child_dict_all, node_str_dict_all, final_splitted_states = \
+        _, _, node_child_dict_all, node_str_dict_all, final_splitted_states = \
             self.root.select_action_by_n(TreeEnv=TreeEnv, level=0, selected_node=None,
                                          node_child_dict_all=node_child_dict_all,
                                          node_str_dict_all=node_str_dict_all,
-                                         mother_str=root_state_str)
+                                         mother_str=root_state_str,
+                                         if_iterates_till_leaf=True)
         print('\n The final binary tree is:')
         PBT = PrintBinaryTree(node_str_dict_all, node_child_dict_all)
         PBT.print_final_binary_tree(root_state_str, indent_number=0)
@@ -907,34 +922,50 @@ class MCTS:
 
         return final_splitted_states
 
-    def pick_action(self):
-        """
-        Selects an action for the root state based on the visit counts.
-        """
-        if self.root.depth > self.temp_threshold:
-            action = np.argmax(self.root.child_N)
-        else:
-            cdf = self.root.child_N.cumsum()
-            cdf /= cdf[-1]
-            selection = rd.random()
-            action = cdf.searchsorted(selection)
-            assert self.root.child_N[action] != 0
-        return action
+    # def pick_action(self):
+    #     """
+    #     Selects an action for the root state based on the visit counts.
+    #     """
+    #     if self.root.depth > self.temp_threshold:
+    #         action = np.argmax(self.root.child_N)
+    #     else:
+    #         cdf = self.root.child_N.cumsum()
+    #         cdf /= cdf[-1]
+    #         selection = rd.random()
+    #         action = cdf.searchsorted(selection)
+    #         assert self.root.child_N[action] != 0
+    #     return action
 
-    def take_action(self, action, TreeEnv):
-        # TODO: we need this method, maybe
-        # Store data to be used as experience tuples.
-        ob = self.TreeEnv.get_obs_for_states([self.root.state])
-        self.obs.append(ob)
-        self.searches_pi.append(
-            self.root.visits_as_probs())  # TODO: Use self.root.position.n < self.temp_threshold as argument
+    def take_move(self, TreeEnv):
+        root = self.root
+        return_value = self.TreeEnv.get_return(root.state, root.depth)
+        root_state_str = ','.join(list(map(str, root.state[0])))
+        selected_action, child_visit_probability, node_child_dict_all, node_str_dict_all, final_splitted_states = \
+            root.select_action_by_n(TreeEnv=TreeEnv, level=0, selected_node=None,
+                                         node_child_dict_all=self.moved_node_child_dict_all,
+                                         node_str_dict_all=self.moved_node_str_dict_all,
+                                         mother_str=root_state_str)
+        self.moved_nodes.append(self.root)
+        self.searches_pi.append(child_visit_probability)
         self.qs.append(self.root.Q)
-        reward = (self.TreeEnv.get_return(self.root.children[action].state, self.root.children[action].depth)
-                  - sum(self.rewards))
-        self.rewards.append(reward)
+        self.rewards.append(return_value)
+        self.states.append(root.state)
 
         # Resulting state becomes new root of the tree.
-        self.root = self.root.find_or_add_child(action, TreeEnv)
+        self.root = root.children[selected_action]
+
+        print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
+              "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
+            self.moved_nodes[-1].level,
+            self.moved_nodes[-1].var_list,
+            self.root.level,
+            self.root.var_list,
+            selected_action,
+            self.searches_pi[-1],
+            self.qs[-1],
+            self.rewards[-1],
+        ))
+
         del self.root.parent.children
 
     # def transfer_final_binary_tree(self):
@@ -1138,7 +1169,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
     pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
 
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=200)
+    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=500)
     # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
     mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
@@ -1151,7 +1182,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
 
-            if current_simulations % 500 == 0:
+            if current_simulations % 1000 == 0:
                 mcts.root.print_tree(TreeEnv, tree_writer)
                 if current_simulations > 0:
                     for timer_key in avg_timer_record.keys():
@@ -1171,9 +1202,10 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
             # snapshot = tracemalloc.take_snapshot()
             # display_top(snapshot)
             mcts.root.print_tree(TreeEnv)
+            mcts.take_move(TreeEnv)
 
         print('\n The extracted tree is:')
-        mcts.select_final_actions(mode='single', action_id=action_id, TreeEnv=TreeEnv)
+        # mcts.select_final_actions(mode='single', action_id=action_id, TreeEnv=TreeEnv)
 
         break
 
