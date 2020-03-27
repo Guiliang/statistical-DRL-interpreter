@@ -17,7 +17,7 @@ from scipy.stats import norm
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.01  # 0.04 for parallel, 0.005/0.002 for single
+c_PUCT = 0.02  # 0.04 for parallel, 0.005/0.002 for single
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -798,19 +798,19 @@ class MCTS:
     the tree search.
     """
 
-    def __init__(self, TreeEnv, tree_save_dir=None, num_per_parallel=20):
+    def __init__(self, TreeEnv, tree_save_dir=None, simulations_per_round=20):
         """
         :param TreeEnv: Static class that defines the environment dynamics,
         e.g. which state follows from another state when performing an action.
         :param seconds_per_move: Currently unused.
-        :param num_per_parallel: Number of traversals through the tree
+        :param simulations_per_round: Number of traversals through the tree
         before performing a step.
         """
         # self.agent_netw = agent_netw
         self.tree_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir =='' else tree_save_dir
         self.TreeEnv = TreeEnv
         # self.simulations_per_move = simulations_per_move
-        self.num_parallel = num_per_parallel
+        self.num_parallel = simulations_per_round
         self.temp_threshold = None  # Overwritten in initialize_search
 
         self.qs = None
@@ -1159,7 +1159,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
 
     print('CPUCT is {0}'.format(c_PUCT))
 
-
+    simulations_per_round = 1000
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER
@@ -1169,20 +1169,21 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
     pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
 
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=500)
+    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
     # init_state, init_var_list = TreeEnv.initial_state()
     n_action_types = TreeEnv.n_action_types
     mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
                            n_action_types=n_action_types, ignored_dim=ignored_dim)
     k = 5
+    round_counter = 0
     while True:
         pre_simulations = mcts.root.N  # dummy node records the total simulation number
         current_simulations = 0
-        counter_pre_simulations = 0
+        # counter_pre_simulations = 0
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
 
-            if current_simulations % 1000 == 0:
+            if current_simulations % 2000 == 0:
                 mcts.root.print_tree(TreeEnv, tree_writer)
                 if current_simulations > 0:
                     for timer_key in avg_timer_record.keys():
@@ -1192,13 +1193,14 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
 
             start_time = time.time()
             mcts.tree_search(k, original_var=mcts.original_var, avg_timer_record=avg_timer_record, TreeEnv=TreeEnv)
+            round_counter += 1
             k = k + 1 if k < max_k else k
             end_time = time.time()
             print('single thread time is {0}'.format(str(end_time - start_time)))
-            current_simulations = mcts.root.parent.child_N[None]
-            pbar.update(current_simulations - counter_pre_simulations)
+            current_simulations = simulations_per_round * round_counter
+            pbar.update(simulations_per_round)
             print('current simulations number is {0}'.format(current_simulations))
-            counter_pre_simulations = current_simulations
+            # counter_pre_simulations = current_simulations
             # snapshot = tracemalloc.take_snapshot()
             # display_top(snapshot)
             mcts.root.print_tree(TreeEnv)
@@ -1223,11 +1225,11 @@ def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
     n_action_types = TreeEnv.n_action_types
 
     for i in range(5):
-        mcts_thread = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=20)
+        mcts_thread = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
         mcts_thread.initialize_search(random_seed=i + 1, init_state=init_state,
                                       init_var_list=init_var_list, n_action_types=n_action_types)
         mcts_threads.append(mcts_thread)
-    mcts_origin = MCTS(None, tree_save_dir=mcts_saved_dir, num_per_parallel=20)
+    mcts_origin = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
     mcts_origin.initialize_search(random_seed=0, init_state=init_state,
                                   init_var_list=init_var_list, n_action_types=n_action_types)
     k = 5
