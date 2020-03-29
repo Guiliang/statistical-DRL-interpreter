@@ -3,7 +3,7 @@ import numpy as np
 
 class RegressionTree():
     def __init__(self, training_data, mimic_env):
-        self.model = DecisionTreeRegressor(max_depth=4)
+        self.model = DecisionTreeRegressor(max_depth=3, criterion='friedman_mse')
         self.training_data = training_data
         self.mimic_env = mimic_env
 
@@ -20,7 +20,7 @@ class RegressionTree():
             else:
                 predict_dictionary.update({predict_value:[predict_index]})
 
-        return_value = self.mimic_env.get_return(state=predict_dictionary.values())
+        return_value = self.mimic_env.get_return(state=list(predict_dictionary.values()))
         print(return_value)
 
 

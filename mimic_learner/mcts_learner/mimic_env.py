@@ -1,8 +1,7 @@
 from copy import deepcopy
 
 import numpy as np
-import numpy as np
-from scipy.stats import norm
+# from scipy.stats import norm
 from mimic_learner.mcts_learner.static_env import StaticEnv
 
 UP = 0
@@ -16,7 +15,7 @@ class MimicEnv(StaticEnv):
     def __init__(self, n_action_types=None):
         self.n_action_types = n_action_types
         self.data_all = None
-        self.initial_std = None
+        self.initial_var = None
 
     def add_data(self, data):
         if self.data_all is None:
@@ -24,11 +23,11 @@ class MimicEnv(StaticEnv):
         else:
             for transition in data:
                 self.data_all.append(transition)
-        delta_all = []
-        for data_line in self.data_all:
-            delta_all.append(data_line[-1])
-        mu, std = norm.fit(delta_all)
-        self.initial_std = std
+        # delta_all = []
+        # for data_line in self.data_all:
+        #     delta_all.append(data_line[-1])
+        # mu, std = norm.fit(delta_all)
+        # self.initial_std = std
 
     def reset(self):
         pass
@@ -86,11 +85,13 @@ class MimicEnv(StaticEnv):
         state.insert(subset_index, subset_state2)
         state.insert(subset_index, subset_state1)
         if len(subset_delta1) > 0:
-            _, var1 = norm.fit(subset_delta1)
+            var1 = np.var(subset_delta1)
+            # _, std1 = norm.fit(subset_delta1)
         else:
             var1 = 0
         if len(subset_state2) > 0:
-            _, var2 = norm.fit(subset_delta2)
+            var2 = np.var(subset_delta2)
+            # _, std2 = norm.fit(subset_delta2)
         else:
             var2 = 0
         # if parent_var_list is not None:
@@ -118,8 +119,10 @@ class MimicEnv(StaticEnv):
                 state_index.append(i)
                 delta_all.append(state_data[i][-1])
         #     delta.append(state_data[i][-1])
-        _, std = norm.fit(delta_all)
-        return [state_index], [std]
+        # _, std = norm.fit(delta_all)
+        var = np.var(delta_all)
+        self.initial_var = var
+        return [state_index], [var]
 
     @staticmethod
     def get_obs_for_states(states):
@@ -134,12 +137,14 @@ class MimicEnv(StaticEnv):
             for i in range(len(subsection)):
                 delta_all.append(self.data_all[subsection[i]][-1])
             if len(delta_all) > 0:
-                mu, std = norm.fit(delta_all)
-                std_weighted_sum += float(len(subsection)) / total_length * std
+                # mu, std = norm.fit(delta_all)
+                # var_tmp = std**2
+                var = np.var(delta_all)
+                std_weighted_sum += (float(len(subsection)) / total_length) * var
         # if self.initial_std - std_weighted_sum > 0.01306:
         #     print('testing')
         # TODO: punish the split number
-        return self.initial_std - std_weighted_sum
+        return self.initial_var - std_weighted_sum
 
 
 

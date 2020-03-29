@@ -10,14 +10,14 @@ import collections
 from copy import deepcopy
 import multiprocessing as mp
 import numpy as np
-from scipy.stats import norm
+# from scipy.stats import norm
 # import warnings
 # warnings.filterwarnings("error")
 # Exploration constant
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.02  # 0.04 for parallel, 0.005/0.002 for single
+c_PUCT = 0.004  # 0.04 for parallel, 0.005/0.002 for single
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -367,11 +367,13 @@ class MCTSNode:
 
             if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
                 if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
-                    mu1, std1 = norm.fit(split_subset_delta_1)
-                    std_weighted_sum += float(len(split_subset_delta_1)) / total_length * std1
+                    # mu1, std1 = norm.fit(split_subset_delta_1)
+                    var1 = np.var(split_subset_delta_1)
+                    std_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * var1
                 if len(split_subset_delta_2) > 0:
-                    mu2, std2 = norm.fit(split_subset_delta_2)
-                    std_weighted_sum += float(len(split_subset_delta_2)) / total_length * std2
+                    # mu2, std2 = norm.fit(split_subset_delta_2)
+                    var2 = np.var(split_subset_delta_2)
+                    std_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * var2
 
                 if not apply_global_variance:
                     weight_std_reduction = len(state_subset) / total_length * var_list[
@@ -938,7 +940,6 @@ class MCTS:
 
     def take_move(self, TreeEnv):
         root = self.root
-        return_value = self.TreeEnv.get_return(root.state, root.depth)
         root_state_str = ','.join(list(map(str, root.state[0])))
         selected_action, child_visit_probability, node_child_dict_all, node_str_dict_all, final_splitted_states = \
             root.select_action_by_n(TreeEnv=TreeEnv, level=0, selected_node=None,
@@ -948,11 +949,12 @@ class MCTS:
         self.moved_nodes.append(self.root)
         self.searches_pi.append(child_visit_probability)
         self.qs.append(self.root.Q)
-        self.rewards.append(return_value)
         self.states.append(root.state)
 
         # Resulting state becomes new root of the tree.
         self.root = root.children[selected_action]
+        return_value = self.TreeEnv.get_return(self.root.state, self.root.depth)
+        self.rewards.append(return_value)
 
         print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
               "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
@@ -1159,7 +1161,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
 
     print('CPUCT is {0}'.format(c_PUCT))
 
-    simulations_per_round = 1000
+    simulations_per_round = 2000
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER
@@ -1183,8 +1185,8 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         # We want `num_simulations` simulations per action not counting simulations from previous actions.
         while current_simulations < pre_simulations + num_simulations:
 
-            if current_simulations % 2000 == 0:
-                mcts.root.print_tree(TreeEnv, tree_writer)
+            if current_simulations % 6000 == 0:
+                # mcts.root.print_tree(TreeEnv, tree_writer)
                 if current_simulations > 0:
                     for timer_key in avg_timer_record.keys():
                         print("Avg Time of {0} is {1}".
