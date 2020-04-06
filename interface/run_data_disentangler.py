@@ -24,10 +24,17 @@ def run():
         global_model_data_path = "/home/functor/scratch/Galen/project-DRL-Interpreter"
     else:
         raise EnvironmentError("Unknown running setting, please set up your own environment")
+    deg_type = 'AAE'
+    DEG = Disentanglement(config=flappybird_config, deg_type=deg_type,
+                          global_model_data_path=global_model_data_path)
+    if deg_type == 'FVAE':
+        DEG.train_fave()
+    elif deg_type == 'AAE':
+        DEG.train_aae()
+    else:
+        raise ValueError('Unknown deg type {0}'.format(deg_type))
 
-    DEG = Disentanglement(config=flappybird_config, global_model_data_path=global_model_data_path)
-    # DEG.train()
-    DEG.test(testing_output_dir='../data_disentanglement/output/flappybird/')
+    # DEG.test(testing_output_dir='../data_disentanglement/output/flappybird/')
 
 
 if __name__ == "__main__":

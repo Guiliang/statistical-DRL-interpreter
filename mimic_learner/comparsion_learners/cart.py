@@ -1,9 +1,12 @@
 from sklearn.tree.tree import DecisionTreeRegressor
 import numpy as np
 
+from utils.plot_utils import plot_decision_boundary
+
+
 class RegressionTree():
     def __init__(self, training_data, mimic_env):
-        self.model = DecisionTreeRegressor(max_depth=3, criterion='friedman_mse')
+        self.model = DecisionTreeRegressor(max_depth=10, criterion='friedman_mse')
         self.training_data = training_data
         self.mimic_env = mimic_env
 
@@ -22,6 +25,16 @@ class RegressionTree():
 
         return_value = self.mimic_env.get_return(state=list(predict_dictionary.values()))
         print(return_value)
+
+    def train_2d_tree(self, selected_dim = (4, 6)):
+
+        training_data = np.stack([np.asarray(self.training_data[0])[:, selected_dim[0]],
+                                        np.asarray(self.training_data[0])[:, selected_dim[1]]], axis=1)
+        data_number = 150
+        self.model.fit(training_data[:data_number], self.training_data[1][:data_number])
+        plot_decision_boundary(input_data=training_data[:data_number],
+                               target_data = self.training_data[1][:data_number], tree_model=self.model)
+
 
 
     def print_tree(self):

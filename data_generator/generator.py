@@ -138,7 +138,7 @@ class DRLDataGenerator():
 
     def test_model_and_generate_data(self, test_size=10000):
 
-        with open(self.data_save_path+'action_values.txt', 'w')as action_values_file:
+        with open(self.data_save_path+'_action_values.txt', 'w')as action_values_file:
             action_index = 0
             x_t0_colored, r_t, terminal = self.game_state.next_frame(action_index)
             x_t0 = handle_image_input(x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])

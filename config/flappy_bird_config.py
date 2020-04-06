@@ -12,14 +12,37 @@ class FlappyBirdConfig(object):
 
         def __init__(self, init):
             super(FlappyBirdConfig.DEG, self).__init__(init)
+            self.AAE = FlappyBirdConfig.DEG.AAE(init["AAE"])
+            self.Learn = FlappyBirdConfig.DEG.Learn(init["Learn"])
             self.FVAE = FlappyBirdConfig.DEG.FVAE(init["FVAE"])
 
-        class FVAE(InitWithDict):
+        class Learn(InitWithDict):
+            batch_size = None
             name = None
             cuda = None
             max_iter = None
-            batch_size = None
+            print_iter = None
             z_dim = None
+            image_length = None
+            image_width = None
+            image_type = None
+            num_workers = None
+            dset_dir = None
+
+
+        class AAE(InitWithDict):
+            lr_D = None
+            beta1_D = None
+            beta2_D = None
+            lr_G = None
+            beta1_G = None
+            beta2_G = None
+            lr_E = None
+            beta1_E = None
+            beta2_E = None
+
+
+        class FVAE(InitWithDict):
             gamma = None
             lr_VAE = None
             beta1_VAE = None
@@ -27,16 +50,10 @@ class FlappyBirdConfig(object):
             lr_D = None
             beta1_D = None
             beta2_D = None
-            dset_dir = None
-            num_workers = None
-            print_iter = None
             ckpt_save_iter = None
             output_save = None
             gmma = None
             ckpt_load = None
-            image_length = None
-            image_width = None
-            image_type = None
 
     class DRL(InitWithDict):
 
