@@ -9,3 +9,4 @@ mimic_learner/save_tmp/
 data_disentanglement/output/*
 interface/logs/*
 *.out
+mimic_learner/action_images_plots/
