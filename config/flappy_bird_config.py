@@ -40,6 +40,7 @@ class FlappyBirdConfig(object):
             lr_E = None
             beta1_E = None
             beta2_E = None
+            ckpt_save_iter = None
 
 
         class FVAE(InitWithDict):

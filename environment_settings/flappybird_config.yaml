@@ -49,7 +49,9 @@ DEG:
     ckpt_dir : '/DRL-interpreter-model/DEG/AAE/flappybird/'
     output_dir: '/DRL-interpreter-model/DEG/AAE/flappybird/'
     viz_ta_iter: 10000
-
+    ckpt_save_iter: 10000
+    ckpt_load: True
+    output_save: True
 
   FVAE:
     gamma: 6.4

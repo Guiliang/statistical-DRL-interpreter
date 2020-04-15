@@ -9,7 +9,7 @@ def plot_decision_boundary(input_data, target_data, tree_model, plot_step = 0.02
     xx, yy = np.meshgrid(np.arange(x_min, x_max, plot_step),
                          np.arange(y_min, y_max, plot_step))
 
-    Z = tree_model.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = tree_model.predict(np.c_[xx.ravel(), yy.ravel()])  # TODO: implement predict for mcts
     Z = Z.reshape(xx.shape)
     cs = plt.contourf(xx, yy, Z, cmap=cm, alpha=0.5)
 
@@ -23,3 +23,5 @@ def plot_decision_boundary(input_data, target_data, tree_model, plot_step = 0.02
     plt.xlabel("Latent dimension 3")
     plt.ylabel("Latent dimension 5")
     plt.savefig('./decision_boundary.png')
+
+

@@ -37,8 +37,7 @@ class Disentanglement(object):
         self.image_length = config.DEG.Learn.image_length
         self.image_width = config.DEG.Learn.image_width
 
-
-
+        self.nc = 3
         if deg_type == 'FVAE':
             self.gamma = config.DEG.FVAE.gamma
             # self.lr_VAE = config.DEG.FVAE.lr_VAE
@@ -48,7 +47,6 @@ class Disentanglement(object):
             # self.beta1_D = config.DEG.FVAE.beta1_D
             # self.beta2_D = config.DEG.FVAE.beta2_D
             self.VAE = FactorVAE2(self.z_dim).to(self.device)
-            self.nc = 3
             self.optim_VAE = optim.Adam(self.VAE.parameters(), lr=config.DEG.FVAE.lr_VAE,
                                         betas=(config.DEG.FVAE.beta1_VAE, config.DEG.FVAE.beta2_VAE))
             self.fvaeD = Discriminator(self.z_dim).to(self.device)
@@ -89,6 +87,17 @@ class Disentanglement(object):
                 self.Tensor = torch.cuda.FloatTensor
             else:
                 self.Tensor = torch.FloatTensor
+
+            self.ckpt_dir = os.path.join(self.global_model_data_path +config.DEG.AAE.ckpt_dir, 'saved_model')
+            self.ckpt_save_iter = config.DEG.AAE.ckpt_save_iter
+            if not local_test_flag:
+                mkdirs(self.ckpt_dir)
+
+            self.output_dir = os.path.join(self.global_model_data_path+config.DEG.AAE.output_dir, 'output')
+            self.output_save = config.DEG.AAE.output_save
+            self.viz_ta_iter = config.DEG.AAE.viz_ta_iter
+            if not local_test_flag:
+                mkdirs(self.output_dir)
         else:
             raise ValueError('Unknown deg type {0}'.format(deg_type))
 
@@ -258,7 +267,7 @@ class Disentanglement(object):
         dim_minmax_tuple_list = []
         dim_interpolation_list = []
         for k in range(self.z_dim):
-            total_dim_data = z_checked_all[:, k, :, :]
+            total_dim_data = z_checked_all[:, k]
             dim_max = float(torch.max(total_dim_data).cpu().numpy())
             dim_min = float(torch.min(total_dim_data).cpu().numpy())
             dim_minmax_tuple_list.append((dim_min, dim_max))
@@ -295,7 +304,7 @@ class Disentanglement(object):
             # title = '{}_latent_traversal(iter:{})'.format(key, self.global_iter)
         output_dir = None
         if self.output_save:
-            output_dir = os.path.join(self.output_dir, str(self.global_iter))
+            output_dir = os.path.join(self.output_dir, str(self.global_iter)+'/')
         if testing_output_dir is not None:
             output_dir = testing_output_dir
         if output_dir is not None:
@@ -312,14 +321,15 @@ class Disentanglement(object):
                     save_image(tensor=gifs[i][j].cpu(),
                                fp=os.path.join(output_dir+'images/', '{0}_{1}_{2}_origin.jpg'.format(model_name, key, j)),
                                nrow=self.z_dim, pad_value=1)
-                    save_image(tensor=masked_gif_tensor[i][j],
-                               fp=os.path.join(output_dir+'images/', '{0}_{1}_{2}_masked.jpg'.format(model_name, key, j)),
-                               nrow=masked_dim_number, pad_value=1)
+                    if masked_gif_tensor is not None:
+                        save_image(tensor=masked_gif_tensor[i][j],
+                                   fp=os.path.join(output_dir+'images/', '{0}_{1}_{2}_masked.jpg'.format(model_name, key, j)),
+                                   nrow=masked_dim_number, pad_value=1)
                 grid2gif(str(os.path.join(output_dir+'images/', model_name+'_'+key + '*_origin.jpg')),
                          str(os.path.join(output_dir, model_name+'_'+key + '_origin.gif')), delay=10)
-
-                grid2gif(str(os.path.join(output_dir+'images/', model_name+'_'+key + '*_masked.jpg')),
-                         str(os.path.join(output_dir, model_name+'_'+key + '_masked.gif')), delay=10)
+                if masked_gif_tensor is not None:
+                    grid2gif(str(os.path.join(output_dir+'images/', model_name+'_'+key + '*_masked.jpg')),
+                             str(os.path.join(output_dir, model_name+'_'+key + '_masked.gif')), delay=10)
 
         self.net_mode(train=True)
 
@@ -344,12 +354,12 @@ class Disentanglement(object):
                       'model_states': model_states,
                       'optim_states': optim_states}
         elif type == "AAE":
-            model_states = {'aeEnet':self.aeEnet,
-                            'aeGnet':self.aeGnet,
-                            'aeDnet':self.aeDnet}
-            optim_states = {'optim_E':self.optim_E,
-                            'optim_G':self.optim_G,
-                            'optim_D':self.optim_D}
+            model_states = {'aeEnet':self.aeEnet.state_dict(),
+                            'aeGnet':self.aeGnet.state_dict(),
+                            'aeDnet':self.aeDnet.state_dict()}
+            optim_states = {'optim_E':self.optim_E.state_dict(),
+                            'optim_G':self.optim_G.state_dict(),
+                            'optim_D':self.optim_D.state_dict()}
             states = {'iter': self.global_iter,
                       'model_states': model_states,
                       'optim_states': optim_states}
@@ -364,7 +374,7 @@ class Disentanglement(object):
             # self.pbar.write("=> saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
             print("saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
 
-    def load_checkpoint(self, ckptname='last', verbose=True, testing_flag=False):
+    def load_checkpoint(self, ckptname='last', verbose=True, testing_flag=False, log_file=None):
 
         if ckptname == 'last':
             ckpts = os.listdir(self.ckpt_dir)
@@ -395,7 +405,7 @@ class Disentanglement(object):
             if not testing_flag:
                 self.pbar.update(self.global_iter)
             if verbose:
-                print("=> loaded checkpoint '{} (iter {})'".format(filepath, self.global_iter))
+                print("=> loaded checkpoint '{} (iter {})'".format(filepath, self.global_iter), file=log_file)
         else:
             if verbose:
-                print("=> no checkpoint found at '{}'".format(filepath))
+                print("=> no checkpoint found at '{}'".format(filepath), file=log_file)

@@ -14,15 +14,18 @@ import numpy as np
 # import warnings
 # warnings.filterwarnings("error")
 # Exploration constant
+import psutil as psutil
+import sys
+
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.005
+c_PUCT = 0.01
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
 SPLIT_POOL = None
-PROCESS_NUMBER = 4
+PROCESS_NUMBER = 12
 
 
 class DummyNode:
@@ -236,18 +239,20 @@ class MCTSNode:
                 # child_action_score_return.append((child_Q[dim] + noise_U))
         return child_action_score_return
 
-    def select_leaf(self, k, TreeEnv, dim_per_split=100, reference_data=None, original_var=None, avg_timer_record=None):
+    def select_leaf(self, k, TreeEnv, max_exploration_depth = 5, dim_per_split=100,
+                    original_var=None, avg_timer_record=None):
         """
          {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
         """
         current = self
-        while True:
+        exploration_depth = 0
+        while exploration_depth<max_exploration_depth:
             current.N += 1
             # Encountered leaf node (i.e. node that is not yet expanded).
             if not current.is_expanded:
-                if reference_data is not None:
+                if TreeEnv.data_all is not None:
                     start_time = time.time()
-                    current.select_expand_action(dim_per_split=dim_per_split, reference_data=reference_data,
+                    current.select_expand_action(dim_per_split=dim_per_split, reference_data=TreeEnv.data_all,
                                                  original_var=original_var,
                                                  add_estimate=True, apply_global_variance=True)
                     end_time = time.time()
@@ -258,7 +263,7 @@ class MCTSNode:
                 break
             start_time = time.time()
             topK_value_index_list = []
-
+            # TODO: add the maximum exploration depth
             sorted_split_var = sorted(current.split_var_index_dict.keys(), reverse=True)
             split_flag = True
             if sorted_split_var[0] == 0:
@@ -301,11 +306,13 @@ class MCTSNode:
             # best_move_index = np.unravel_index(child_action_score_all.argmax(), child_action_score_all.shape)
             action = "{0}_{1}_{2}".format(str(best_subset_index), str(best_dim_index), str(best_split_value))
             start_time = time.time()
-            current = current.find_or_add_child(action=action, TreeEnv=TreeEnv)
+            if exploration_depth + 1 < max_exploration_depth:
+                current = current.find_or_add_child(action=action, TreeEnv=TreeEnv)
             end_time = time.time()
             used_time = end_time - start_time
             avg_timer_record.get('add_node')[0] += 1
             avg_timer_record.get('add_node')[1] += used_time
+            exploration_depth += 1
         return current, avg_timer_record
 
     @staticmethod
@@ -595,8 +602,7 @@ class MCTSNode:
 
         if action not in self.children:
             # Obtain state following given action.
-            new_state, new_var_list = TreeEnv.next_state(deepcopy(self.state), action,
-                                                              deepcopy(self.var_list))
+            new_state, new_var_list = TreeEnv.next_state(self.state, action, self.var_list)
             new_state_list = mcts_state_to_list(new_state)
             assert self.children_state_pair.get(new_state_list) is None
             self.children_state_pair.update({new_state_list: action})
@@ -710,8 +716,9 @@ class MCTSNode:
                                                                                     return_value, self.state)
 
         # node_string += ",state:{}".format(self.state)
-        print(node_string)
-        if writer is not None:
+        if writer is None:
+            print(node_string)
+        else:
             writer.write(node_string + "\n")
         for _, child in sorted(self.children.items()):
             child.print_tree(TreeEnv, writer, print_indent + 1)
@@ -856,31 +863,31 @@ class MCTS:
         self.moved_node_str_dict_all = {}
         self.moved_node_child_dict_all = {}
 
-    def tree_search(self, k, original_var, avg_timer_record, TreeEnv):
-        """
-        Performs multiple simulations in the tree (following trajectories)
-        until a given amount of leaves to expand have been encountered.
-        Then it expands and evalutes these leaf nodes.
-        :param num_parallel: Number of leaf states which the agent network can
-        evaluate at once. Limits the number of simulations.
-        :return: The leaf nodes which were expanded.
-        """
-
-        print('\nCPUCT is {0}, pid is {1} and k is {2}'.format(c_PUCT, os.getpid(), k))
+    def tree_search(self, k, original_var, avg_timer_record, TreeEnv, log_file, process, pid):
+        print('\nCPUCT is {0}, pid is {1} and k is {2}\n'.format(c_PUCT, pid, k), file=log_file)
         # if num_parallel is None:
         self.TreeEnv = TreeEnv
         num_parallel = self.simulations_per_round
         leaves = []
         np.random.seed(self.random_seed)
         while len(leaves) < num_parallel:
+            if len(leaves) % 100 == 0:
+                mme = process.memory_info().rss
+                print("Working on simulations {0} currently using memory {1}".format(str(len(leaves)), str(mme)) ,file=log_file)
+                log_file.flush()
             # print("_"*50)
             leaf, avg_timer_record = self.root.select_leaf(k=k, TreeEnv=TreeEnv,
-                                                           reference_data=self.TreeEnv.data_all,
                                                            original_var=original_var,
                                                            avg_timer_record=avg_timer_record)
+            # mme = process.memory_info().rss
+            # print("Search {0} using total memory {1}".format(str(len(leaves)), str(mme)), file=log_file)
             value = self.TreeEnv.get_return(leaf.state, leaf.depth)
+            # mme = process.memory_info().rss
+            # print("Return {0} using total memory {1}".format(str(len(leaves)), str(mme)), file=log_file)
             start_time = time.time()
             leaf.backup_value(value, up_to=self.root)
+            # mme = process.memory_info().rss
+            # print("Backup {0} using total memory {1}".format(str(len(leaves)), str(mme)), file=log_file)
             end_time = time.time()
             used_time = end_time - start_time
             avg_timer_record.get('back_up')[0] += 1
@@ -888,11 +895,6 @@ class MCTS:
             # Discourage other threads to take the same trajectory via virtual loss
             # leaf.add_virtual_loss(up_to=self.root)
             leaves.append(leaf)
-        # Evaluate the leaf-states all at once and backup the value estimates.
-        # for timer_key in avg_timer_record.keys():
-        #     print("Avg Time of {0} is {1}".
-        #           format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-        # self.root.print_tree(tree_writer)
         return self, avg_timer_record
 
     def save_mcts(self, mode, current_simulations, action_id):
@@ -903,6 +905,8 @@ class MCTS:
                                                                                  action_id)
         with open(file_name, 'wb') as f:
             pickle.dump(self, f)
+
+        return file_name
 
     def select_final_actions(self, mode, action_id, TreeEnv):
         mcts_selected = MCTS(None)
@@ -953,7 +957,7 @@ class MCTS:
     #         assert self.root.child_N[action] != 0
     #     return action
 
-    def take_move(self, TreeEnv):
+    def take_move(self, TreeEnv, log_file, process):
         root = self.root
         if len(self.moved_nodes) > 0:
             mother_state_str = ','.join(list(map(str, self.moved_nodes[-1].state[0])))
@@ -964,16 +968,43 @@ class MCTS:
                                          node_child_dict_all=self.moved_node_child_dict_all,
                                          node_str_dict_all=self.moved_node_str_dict_all,
                                          mother_str=mother_state_str)
-        self.moved_nodes.append(self.root)
+
+        # generate prediction value
+        state_prediction = []
+        for state in root.state:
+            state_target_values = []
+            for data_index in state:
+                state_target_values.append(float(self.TreeEnv.data_all[data_index][-1]))
+            state_prediction.append(sum(state_target_values)/len(state_target_values))
+        self.root.state_prediction=state_prediction
         self.searches_pi.append(child_visit_probability)
         self.qs.append(self.root.Q)
         self.states.append(root.state)
 
+        candidate_actions2remove = []
         # Resulting state becomes new root of the tree.
-        self.root = root.children[selected_action]
+        for candidate_action in root.children.keys():
+            if candidate_action == selected_action:
+                self.root = root.children[selected_action]
+            else:
+                candidate_actions2remove.append(candidate_action)
+        # mme_b = process.memory_info().rss
+        for candidate_action in candidate_actions2remove:
+            del root.children[candidate_action]
+            gc.collect()
+        mme_a = process.memory_info().rss
+        print("Clean total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
+
+        # mme_b = process.memory_info().rss
+        # del root.child_N
+        # del root.child_W
+        print("The children of root is {0}".format(root.children), file=log_file)
+        self.moved_nodes.append(deepcopy(root))
+        mme_a = process.memory_info().rss
+        print("Deep copy total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
+
         return_value = self.TreeEnv.get_return(self.root.state, self.root.depth)
         self.rewards.append(return_value)
-
         print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
               "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
             self.moved_nodes[-1].level,
@@ -984,9 +1015,8 @@ class MCTS:
             self.searches_pi[-1],
             self.qs[-1],
             self.rewards[-1],
-        ))
+        ), file = log_file)
 
-        del self.root.parent.children
 
     # def transfer_final_binary_tree(self):
     #
@@ -1175,128 +1205,174 @@ def test_mcts(model_dir, TreeEnv, action_id):
     # PBT = PrintBinaryTree(mcts_read.moved_node_str_dict_all, mcts_read.moved_node_child_dict_all)
     # PBT.print_final_binary_tree(mother_str=mother_str, indent_number=0)
 
-    return final_splitted_states, mcts_read.moved_nodes
+    testing_moved_nodes = []
+    for moved_node in mcts_read.moved_nodes:
+        moved_node.states = []
+        testing_moved_nodes.append(moved_node)
 
-    # TODO: add explanation of transferring latent variables to image (Nah, I am working on it.).
+    return testing_moved_nodes
+
+
 
 
 def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                            mcts_saved_dir, max_k, init_state,
-                           init_var_list, action_id, ignored_dim, apply_split_parallel=False):
+                           init_var_list, action_id, ignored_dim,
+                           shell_round_number, log_file,
+                           apply_split_parallel=False, save_gap=2):
+    pid = os.getpid()
+    process = psutil.Process(pid)  # supervise the usage of memory
 
-
-    simulations_per_round = 2000 # 2000
+    next_end_flag = False
+    simulations_per_round = 1000 # 2000
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER
         SPLIT_POOL = mp.Pool(processes=PROCESS_NUMBER)
     tracemalloc.start()
-    from tqdm import tqdm
-    pbar = tqdm(total=num_simulations)
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
-
-    mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
-    # init_state, init_var_list = TreeEnv.initial_state()
-    n_action_types = TreeEnv.n_action_types
-    mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
-                           n_action_types=n_action_types, ignored_dim=ignored_dim)
     k = 5
-    round_counter = 0
-
     global c_PUCT
     c_puct_step_size = float(c_PUCT)/ (num_simulations / simulations_per_round)
 
+    if shell_round_number is None:  # running in linux shell
+        round_counter = 0
+        mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
+        # init_state, init_var_list = TreeEnv.initial_state()
+        # n_action_types = TreeEnv.n_action_types
+        mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
+                               n_action_types=TreeEnv.n_action_types, ignored_dim=ignored_dim)
+        from tqdm import tqdm
+        pbar = tqdm(total=num_simulations)
+        current_simulations = 0
+    else:
+        shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved.pkl'
+        round_counter = shell_round_number*save_gap
+        k = k + shell_round_number*save_gap
+        k = k if k < max_k else max_k
+        c_PUCT -= c_puct_step_size*(shell_round_number*save_gap-1)
+        # pbar.update(simulations_per_round*round_counter)
+        if round_counter > 0:
+            with open(shell_saved_model_dir, 'rb') as f:
+                mcts = pickle.load(f)
+            mcts.simulations_per_round = simulations_per_round
+        else:
+            mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
+            mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
+                                   n_action_types=TreeEnv.n_action_types, ignored_dim=ignored_dim)
+
+        current_simulations = simulations_per_round * round_counter
+
+        print('launch mcts for round {0}\n'.format(round_counter), file = log_file)
+        log_file.flush()
+
     # pre_simulations = mcts.root.N  # dummy node records the total simulation number
-    current_simulations = 0
     # counter_pre_simulations = 0
     # We want `num_simulations` simulations per action not counting simulations from previous actions.
     while current_simulations <  num_simulations:
 
-        if current_simulations % 6000 == 0:
+        if current_simulations % (simulations_per_round*save_gap) == 0:
             # mcts.root.print_tree(TreeEnv, tree_writer)
-            if current_simulations > 0:
+            if next_end_flag:  # skip the first save
                 for timer_key in avg_timer_record.keys():
                     print("Avg Time of {0} is {1}".
-                          format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-            mcts.save_mcts(current_simulations=current_simulations, mode='single', action_id=action_id)
+                          format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]),
+                          file=log_file)
+                mcts_file_name = mcts.save_mcts(current_simulations=current_simulations,
+                                                mode='single', action_id=action_id)
+
+            if shell_round_number is not None and next_end_flag:
+                with open(shell_saved_model_dir, 'wb') as f:
+                    pickle.dump(mcts, f)
+                print('finishing mcts before round {0}\n'.format(round_counter), file = log_file)
+                break
+            next_end_flag = True
 
         start_time = time.time()
-        mcts.tree_search(k, original_var=mcts.original_var, avg_timer_record=avg_timer_record, TreeEnv=TreeEnv)
+        mcts.tree_search(k, original_var=mcts.original_var,
+                         avg_timer_record=avg_timer_record,
+                         TreeEnv=TreeEnv, log_file=log_file,
+                         process=process, pid=pid)
         global c_PUCT
         c_PUCT -= c_puct_step_size
         round_counter += 1
         k = k + 1 if k < max_k else k
         end_time = time.time()
-        print('single thread time is {0}'.format(str(end_time - start_time)))
+        print('Single thread time is {0}\n'.format(str(end_time - start_time)), file = log_file)
         current_simulations = simulations_per_round * round_counter
-        pbar.update(simulations_per_round)
-        print('current simulations number is {0}'.format(current_simulations))
+        if shell_round_number is None:
+            pbar.update(simulations_per_round)
+        print('Current simulations number is {0}\n'.format(current_simulations), file = log_file)
         # counter_pre_simulations = current_simulations
         # snapshot = tracemalloc.take_snapshot()
         # display_top(snapshot)
-        mcts.root.print_tree(TreeEnv)
-        mcts.take_move(TreeEnv)
+        mcts.root.print_tree(TreeEnv, writer=log_file)
+        log_file.flush()
+        mcts.take_move(TreeEnv, log_file, process)
+        log_file.flush()
 
 
-def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
-                             mcts_saved_dir, max_k, init_state, init_var_list, action_id, ignored_dim):
-    tracemalloc.start()
-    from tqdm import tqdm
-    pbar = tqdm(total=num_simulations)
-    avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
-    mcts_pool = mp.Pool(processes=5)
-    mcts_threads = []
 
-    # init_state, init_var_list = TreeEnv.initial_state()
-    n_action_types = TreeEnv.n_action_types
-
-    for i in range(5):
-        mcts_thread = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
-        mcts_thread.initialize_search(random_seed=i + 1, init_state=init_state,
-                                      init_var_list=init_var_list, n_action_types=n_action_types)
-        mcts_threads.append(mcts_thread)
-    mcts_origin = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
-    mcts_origin.initialize_search(random_seed=0, init_state=init_state,
-                                  init_var_list=init_var_list, n_action_types=n_action_types)
-    k = 5
-    while True:
-        pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
-        current_simulations = 0
-        counter_pre_simulations = 0
-        # We want `num_simulations` simulations per action not counting simulations from previous actions.
-        while current_simulations < pre_simulations + num_simulations:
-
-            if current_simulations % 100 == 0:
-                mcts_origin.root.print_tree(TreeEnv, tree_writer)
-                if current_simulations > 0:
-                    for timer_key in avg_timer_record.keys():
-                        print("Avg Time of {0} is {1}".
-                              format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]))
-                mcts_origin.save_mcts(current_simulations=current_simulations, mode='parallel', action_id=action_id)
-
-            start_time = time.time()
-            results = []
-            for i in range(5):
-                results.append(mcts_pool.apply_async(mcts_threads[i].tree_search,
-                                                args=(k, mcts_threads[i].original_var, avg_timer_record, TreeEnv)))
-            k = k + 1 if k < max_k else k
-            mcts_results = [p.get() for p in results]
-            mcts_threads = [results[0] for results in mcts_results]
-            avg_timer_record = mcts_results[0][1]
-            mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin, ignored_dim)
-            end_time = time.time()
-            print('multithread time is {0}'.format(str(end_time - start_time)))
-            current_simulations = mcts_threads[0].root.parent.child_N[None]
-            pbar.update(current_simulations - counter_pre_simulations)
-            print('current simulations number is {0}'.format(current_simulations))
-            counter_pre_simulations = current_simulations
-
-            snapshot = tracemalloc.take_snapshot()
-            display_top(snapshot)
-
-        mcts_origin.root.print_tree(TreeEnv)
-
-        print('\n The extracted tree is:')
-        mcts_origin.select_final_actions(mode='parallel', action_id=action_id, TreeEnv=TreeEnv)
-
-        break
+# def execute_episode_parallel(num_simulations, TreeEnv, tree_writer,
+#                              mcts_saved_dir, max_k, init_state, init_var_list, action_id, ignored_dim):
+#     tracemalloc.start()
+#     from tqdm import tqdm
+#     pbar = tqdm(total=num_simulations)
+#     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
+#     mcts_pool = mp.Pool(processes=5)
+#     mcts_threads = []
+#
+#     # init_state, init_var_list = TreeEnv.initial_state()
+#     n_action_types = TreeEnv.n_action_types
+#
+#     for i in range(5):
+#         mcts_thread = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
+#         mcts_thread.initialize_search(random_seed=i + 1, init_state=init_state,
+#                                       init_var_list=init_var_list, n_action_types=n_action_types)
+#         mcts_threads.append(mcts_thread)
+#     mcts_origin = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=20)
+#     mcts_origin.initialize_search(random_seed=0, init_state=init_state,
+#                                   init_var_list=init_var_list, n_action_types=n_action_types)
+#     k = 5
+#     while True:
+#         pre_simulations = mcts_threads[0].root.N  # dummy node records the total simulation number
+#         current_simulations = 0
+#         counter_pre_simulations = 0
+#         # We want `num_simulations` simulations per action not counting simulations from previous actions.
+#         while current_simulations < pre_simulations + num_simulations:
+#
+#             if current_simulations % 100 == 0:
+#                 mcts_origin.root.print_tree(TreeEnv, tree_writer)
+#                 if current_simulations > 0:
+#                     for timer_key in avg_timer_record.keys():
+#                         print("Avg Time of {0} is {1}".
+#                               format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]),
+#                               file = sys.stderr)
+#                 mcts_origin.save_mcts(current_simulations=current_simulations, mode='parallel', action_id=action_id)
+#
+#             start_time = time.time()
+#             results = []
+#             for i in range(5):
+#                 results.append(mcts_pool.apply_async(mcts_threads[i].tree_search,
+#                                                 args=(k, mcts_threads[i].original_var, avg_timer_record, TreeEnv)))
+#             k = k + 1 if k < max_k else k
+#             mcts_results = [p.get() for p in results]
+#             mcts_threads = [results[0] for results in mcts_results]
+#             avg_timer_record = mcts_results[0][1]
+#             mcts_threads, mcts_origin = merge_mcts(mcts_threads, mcts_origin, ignored_dim)
+#             end_time = time.time()
+#             print('multithread time is {0}'.format(str(end_time - start_time)), file = sys.stderr)
+#             current_simulations = mcts_threads[0].root.parent.child_N[None]
+#             pbar.update(current_simulations - counter_pre_simulations)
+#             print('current simulations number is {0}'.format(current_simulations), file = sys.stderr)
+#             counter_pre_simulations = current_simulations
+#
+#             snapshot = tracemalloc.take_snapshot()
+#             display_top(snapshot)
+#
+#         mcts_origin.root.print_tree(TreeEnv)
+#
+#         print('\n The extracted tree is:')
+#         mcts_origin.select_final_actions(mode='parallel', action_id=action_id, TreeEnv=TreeEnv)
+#
+#         break

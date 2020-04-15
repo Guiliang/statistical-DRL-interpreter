@@ -55,7 +55,10 @@ class MimicEnv(StaticEnv):
         # done = self.pos == (0, 6) or self.step_idx == self.ep_length
         # return state, reward, done, None
 
-    def next_state(self, state, action, parent_var_list=None):
+    def next_state(self, state, action, parent_var_list):
+        state = deepcopy(state)
+        action = deepcopy(action)
+        parent_var_list = deepcopy(parent_var_list)
         action_values = action.split('_')
         subset_index = int(action_values[0])
         dim = int(action_values[1])
