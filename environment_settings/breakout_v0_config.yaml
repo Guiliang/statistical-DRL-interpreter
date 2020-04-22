@@ -1,0 +1,76 @@
+DRL:
+  Learn:
+    actions: 7  # number of valid actions
+    gamma: 0.99  # decay rate of past observations
+    observe: 100 #10000.  # timesteps to observe before training
+    explore: 2000000.  # frames over which to anneal epsilon
+    final_epsilon: 0.0001  # final value of epsilon
+    initial_epsilon: 0.9  # starting value of epsilon
+    replay_memory_size: 50000  # number of previous transitions to remember
+    batch: 32  # size of minibatch
+    frame_per_action: 5
+    learning_rate: 0.000001
+    cuda: True
+    ckpt_dir: '/DRL-interpreter-model/DRL/Assault-v0/'
+    ckpt_save_iter: 100
+    max_iter: 10000
+    ckpt_load: True
+    input_image_size: 84
+    data_save_path: '/DRL-interpreter-model/data/Assault-v0/'
+    action_type: 'discrete'
+
+DEG:
+  Learn:
+    name : 'Assault-v0'  # 'main'
+    cuda : True
+    max_iter: 1000000
+    batch_size: 32
+    image_length : 64
+    image_width : 64
+    print_iter : 500
+    z_dim: 10  # 'dimension of the representation z'
+    num_workers : 2
+    dset_dir: '/DRL-interpreter-model/data'
+    image_type: 'color'
+
+  AAE:
+    lr_D : 0.0002
+    beta1_D : 0.0
+    beta2_D : 0.9
+    lr_G : 0.0002
+    beta1_G : 0.5
+    beta2_G : 0.9
+    lr_E : 0.0002
+    beta1_E : 0.5
+    beta2_E : 0.9
+    ckpt_dir : '/DRL-interpreter-model/DEG/AAE/Assault-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/AAE/Assault-v0/'
+    viz_ta_iter: 10000
+    ckpt_save_iter: 10000
+    ckpt_load: True
+    output_save: True
+
+  FVAE:
+    gamma: 6.4
+    lr_VAE: 0.00005
+    beta1_VAE : 0.9
+    beta2_VAE : 0.999
+    lr_D : 0.0005
+    beta1_D : 0.5
+    beta2_D : 0.9
+    ckpt_save_iter: 10000
+    ckpt_load: True
+    output_save: True
+    ckpt_dir : '/DRL-interpreter-model/DEG/FVAE/Assault-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/FVAE/Assault-v0/'
+    viz_ta_iter: 10000
+
+Mimic:
+  Learn:
+    cuda : True
+    num_simulations: 100001
+    replay_memory_size: 10000
+    episodic_sample_number: 1000  # the number of selected data points
+    saved_dir: '/DRL-interpreter-model/MCTS/Assault-v0/saved_model'
+    max_k: 10
+    ignore_dim: '[0, 2, 8, 9, 10, 12, 18, 19]'

@@ -10,3 +10,5 @@ data_disentanglement/output/*
 interface/logs/*
 *.out
 mimic_learner/action_images_plots/
+data_generator/saved_models/
+example_data/*
