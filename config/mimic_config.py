@@ -2,19 +2,19 @@ import yaml
 from utils.config_utils import InitWithDict
 
 
-class FlappyBirdConfig(object):
+class DRLMimicConfig(object):
     def __init__(self, init):
-        self.DEG = FlappyBirdConfig.DEG(init["DEG"])
-        self.DRL = FlappyBirdConfig.DRL(init["DRL"])
-        self.Mimic = FlappyBirdConfig.Mimic(init["Mimic"])
+        self.DEG = DRLMimicConfig.DEG(init["DEG"])
+        self.DRL = DRLMimicConfig.DRL(init["DRL"])
+        self.Mimic = DRLMimicConfig.Mimic(init["Mimic"])
 
     class DEG(InitWithDict):
 
         def __init__(self, init):
-            super(FlappyBirdConfig.DEG, self).__init__(init)
-            self.AAE = FlappyBirdConfig.DEG.AAE(init["AAE"])
-            self.Learn = FlappyBirdConfig.DEG.Learn(init["Learn"])
-            self.FVAE = FlappyBirdConfig.DEG.FVAE(init["FVAE"])
+            super(DRLMimicConfig.DEG, self).__init__(init)
+            self.AAE = DRLMimicConfig.DEG.AAE(init["AAE"])
+            self.Learn = DRLMimicConfig.DEG.Learn(init["Learn"])
+            self.FVAE = DRLMimicConfig.DEG.FVAE(init["FVAE"])
 
         class Learn(InitWithDict):
             batch_size = None
@@ -59,8 +59,8 @@ class FlappyBirdConfig(object):
     class DRL(InitWithDict):
 
         def __init__(self, init):
-            super(FlappyBirdConfig.DRL, self).__init__(init)
-            self.Learn = FlappyBirdConfig.DRL.Learn(init["Learn"])
+            super(DRLMimicConfig.DRL, self).__init__(init)
+            self.Learn = DRLMimicConfig.DRL.Learn(init["Learn"])
 
         class Learn(InitWithDict):
             game = None
@@ -86,16 +86,17 @@ class FlappyBirdConfig(object):
     class Mimic(InitWithDict):
 
         def __init__(self, init):
-            super(FlappyBirdConfig.Mimic, self).__init__(init)
-            self.Learn = FlappyBirdConfig.Mimic.Learn(init["Learn"])
+            super(DRLMimicConfig.Mimic, self).__init__(init)
+            self.Learn = DRLMimicConfig.Mimic.Learn(init["Learn"])
 
         class Learn(InitWithDict):
             num_simulations = None
             replay_memory_size = None
             episodic_sample_number = None
             max_k = None
+            mcts_saved_dir = None
 
     @staticmethod
     def load(file_path):
         config = yaml.load(open(file_path, 'r'))
-        return FlappyBirdConfig(config)
+        return DRLMimicConfig(config)

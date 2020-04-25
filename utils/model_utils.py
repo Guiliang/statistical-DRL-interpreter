@@ -11,6 +11,7 @@ import math
 from torch import nn
 from torch.nn import Parameter
 from torchvision.utils import save_image
+from utils.general_utils import mkdirs
 
 
 # import numpy as np
@@ -105,25 +106,32 @@ def store_state_action_data(img_colored, action_values, reward, action_index,
     action_values_file.write(action_values_str)
 
     img_colored = Image.fromarray(img_colored)
-    img_colored_save = ttf.rotate(img_colored, angle=270)
-    img_colored_save = ttf.hflip(img_colored_save)
-    tu.save_image(ttf.to_tensor(img_colored_save),
-                  open(save_image_path + 'origin/images/' + game_name + '-' + str(iteration_number) + '_color.png',
-                       'wb'))
+    if game_name == "flappybird":
+        img_colored_save = ttf.rotate(img_colored, angle=270)
+        img_colored_save = ttf.hflip(img_colored_save)
+        img_colored_save = ttf.resize(img_colored_save, size=(84, 84))
+        # img_colored_save.show()
+    else:
+        img_colored_save = img_colored
+
+    origin_save_dir = save_image_path + 'origin/images/' + game_name + '-' + str(iteration_number) + '_origin.png'
+    tu.save_image(ttf.to_tensor(img_colored_save), open(origin_save_dir, 'wb'))
+
     img_colored_save_resized = ttf.resize(img_colored_save, size=(64, 64))
-    tu.save_image(ttf.to_tensor(img_colored_save_resized),
-                  open(save_image_path + 'color/images/' + game_name + '-' + str(iteration_number) + '_color.png',
-                       'wb'))
+    # img_colored_save_resized.show()
+    color_save_dir = save_image_path + 'color/images/' + game_name + '-' + str(iteration_number) + '_color.png'
+    tu.save_image(ttf.to_tensor(img_colored_save_resized), open(color_save_dir,'wb'))
+
+    gray_save_dir = save_image_path + 'gray/images/' + game_name + '-' + str(iteration_number) + '_gray.png'
     img_gray_save = ttf.to_grayscale(img_colored_save_resized, num_output_channels=1)
-    tu.save_image(ttf.to_tensor(img_gray_save),
-                  open(save_image_path + 'gray/images/' + game_name + '-' + str(iteration_number) + '_gray.png', 'wb'))
+    tu.save_image(ttf.to_tensor(img_gray_save), open(gray_save_dir, 'wb'))
+
+    binary_save_dir = save_image_path + 'binary/images/' + game_name + '-' + str(iteration_number) + '_binary.png'
     x_t_save = ttf.to_tensor(img_gray_save)
     min_value = torch.min(x_t_save)
     x_t_b_save = x_t_save > min_value
     x_t_b_save = x_t_b_save.float()
-    tu.save_image(x_t_b_save,
-                  open(save_image_path + 'binary/images/' + game_name + '-' + str(iteration_number) + '_binary.png',
-                       'wb'))
+    tu.save_image(x_t_b_save, open(binary_save_dir, 'wb'))
 
 
 def compute_diff_masked_images(images_tensor):

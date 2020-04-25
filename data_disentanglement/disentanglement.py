@@ -46,7 +46,7 @@ class Disentanglement(object):
             # self.lr_D = config.DEG.FVAE.lr_D
             # self.beta1_D = config.DEG.FVAE.beta1_D
             # self.beta2_D = config.DEG.FVAE.beta2_D
-            self.VAE = FactorVAE2(self.z_dim).to(self.device)
+            self.VAE = FactorVAE2(env_name=self.name, z_dim=self.z_dim).to(self.device)
             self.optim_VAE = optim.Adam(self.VAE.parameters(), lr=config.DEG.FVAE.lr_VAE,
                                         betas=(config.DEG.FVAE.beta1_VAE, config.DEG.FVAE.beta2_VAE))
             self.fvaeD = Discriminator(self.z_dim).to(self.device)
@@ -229,8 +229,7 @@ class Disentanglement(object):
         self.pbar.close()
 
 
-    def test(self, testing_output_dir):
-        model_name = 'FVAE-1000000-bak-3-20'
+    def test(self, model_name, testing_output_dir):
         self.load_checkpoint(ckptname=model_name, testing_flag=True)
         with torch.no_grad():
             self.visualize_traverse(image_length=self.image_length,
@@ -279,15 +278,15 @@ class Disentanglement(object):
         random_img = random_img.to(self.device).unsqueeze(0)
         random_img_z = encoder(random_img)[:, :self.z_dim]
 
-        if self.name == 'flappybird':
-            fixed_idx = 111
-            fixed_img = self.data_loader.dataset.__getitem__(fixed_idx)[0]
+        # if self.name == 'flappybird':
+        fixed_idx = 111
+        fixed_img = self.data_loader.dataset.__getitem__(fixed_idx)[0]
 
-            fixed_img = fixed_img.to(self.device).unsqueeze(0)
-            fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
-            random_z = torch.rand(1, self.z_dim, 1, 1, device=self.device)
+        fixed_img = fixed_img.to(self.device).unsqueeze(0)
+        fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
+        random_z = torch.rand(1, self.z_dim, 1, 1, device=self.device)
 
-            Z = {'fixed_img': fixed_img_z, 'random_img': random_img_z}
+        Z = {'fixed_img': fixed_img_z, 'random_img': random_img_z}
 
         gifs = []
         for key in Z:

@@ -19,7 +19,9 @@ class FlappyBird(object):
     fps_clock = time.Clock()
     screen_width = 288
     screen_height = 512
+    # os.environ["SDL_VIDEODRIVER"] = "dummy"
     screen = display.set_mode((screen_width, screen_height))
+    # screen = None
     display.set_caption('Deep Q-Network Flappy Bird')
     base_image = load('assets/sprites/base.png').convert_alpha()
     background_image = load('assets/sprites/background-black.png').convert()
@@ -148,12 +150,13 @@ class FlappyBird(object):
             self.__init__()
 
         # Draw everything
-        self.screen.blit(self.background_image, (0, 0))
-        self.screen.blit(self.base_image, (self.base_x, self.base_y))
-        self.screen.blit(self.bird_images[self.bird_index], (self.bird_x, self.bird_y))
-        for pipe in self.pipes:
-            self.screen.blit(self.pipe_images[0], (pipe["x_upper"], pipe["y_upper"]))
-            self.screen.blit(self.pipe_images[1], (pipe["x_lower"], pipe["y_lower"]))
+        if self.screen is not None:
+            self.screen.blit(self.background_image, (0, 0))
+            self.screen.blit(self.base_image, (self.base_x, self.base_y))
+            self.screen.blit(self.bird_images[self.bird_index], (self.bird_x, self.bird_y))
+            for pipe in self.pipes:
+                self.screen.blit(self.pipe_images[0], (pipe["x_upper"], pipe["y_upper"]))
+                self.screen.blit(self.pipe_images[1], (pipe["x_lower"], pipe["y_lower"]))
         image = array3d(display.get_surface())
         display.update()
         self.fps_clock.tick(self.fps)

@@ -7,7 +7,7 @@ import numpy as np
 import random
 import time
 from six.moves import queue
-
+from PIL import Image
 from tensorpack.callbacks import Callback
 from tensorpack.utils import logger, get_tqdm
 from tensorpack.utils.concurrency import ShareSessionThread, StoppableThread
@@ -15,6 +15,11 @@ from tensorpack.utils.stats import StatCounter
 
 
 def play_one_episode(env, func, render=False):
+
+    actions = np.asarray([[a] * 200 for a in range(9, 10)])
+    actions = np.asarray([[a] * 200 for a in range(1, 10)])
+    actions = actions.flatten()
+
     def predict(s):
         """
         Map from observation to action, with 0.01 greedy.
@@ -29,12 +34,29 @@ def play_one_episode(env, func, render=False):
 
     ob = env.reset()
     sum_r = 0
+    iteration = 0
     while True:
         act = predict(ob)
+        # act = actions[iteration]
+        print(act)
         ob, r, isOver, info = env.step(act)
+
+        # img_colored = Image.fromarray(ob[:,:,:,0])
+        # img_colored.show()
+        #
+        # img_colored = Image.fromarray(ob[:,:,:,1])
+        # img_colored.show()
+        #
+        # img_colored = Image.fromarray(ob[:,:,:,2])
+        # img_colored.show()
+        #
+        # img_colored = Image.fromarray(ob[:,:,:,3])
+        # img_colored.show()
+
         if render:
             env.render()
         sum_r += r
+        iteration += 1
         if isOver:
             return sum_r
 
@@ -136,3 +158,4 @@ class Evaluator(Callback):
             self.eval_episode = int(self.eval_episode * 0.94)
         self.trainer.monitors.put_scalar('mean_score', mean)
         self.trainer.monitors.put_scalar('max_score', max)
+

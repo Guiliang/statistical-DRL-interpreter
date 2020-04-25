@@ -4,18 +4,16 @@ import numpy as np
 from utils.plot_utils import plot_decision_boundary
 
 
-class RegressionTree():
-    def __init__(self, training_data, mimic_env):
-        self.model = DecisionTreeRegressor(max_depth=10, criterion='friedman_mse')
-        self.training_data = training_data
-        self.mimic_env = mimic_env
+class CARTRegressionTree():
+    def __init__(self):
+        self.model = DecisionTreeRegressor(max_depth=100, criterion='friedman_mse')
 
-    def train(self):
-        self.model.fit(self.training_data[0], self.training_data[1])
-        self.print_tree()
+    def train_mimic(self, training_data, mimic_env):
+        self.model.fit(training_data[0], training_data[1])
+        # self.print_tree()
 
         predict_dictionary = {}
-        predicts = self.model.predict(self.training_data[0])
+        predicts = self.model.predict(training_data[0])
         for predict_index in range(len(predicts)):
             predict_value = predicts[predict_index]
             if predict_value in predict_dictionary.keys():
@@ -23,17 +21,30 @@ class RegressionTree():
             else:
                 predict_dictionary.update({predict_value:[predict_index]})
 
-        return_value = self.mimic_env.get_return(state=list(predict_dictionary.values()))
+        return_value = mimic_env.get_return(state=list(predict_dictionary.values()))
         print(return_value)
 
-    def train_2d_tree(self, selected_dim = (4, 6)):
+    def test_mimic(self, testing_data, mimic_env):
+        predict_dictionary = {}
+        predicts = self.model.predict(testing_data[0])
+        for predict_index in range(len(predicts)):
+            predict_value = predicts[predict_index]
+            if predict_value in predict_dictionary.keys():
+                predict_dictionary[predict_value].append(predict_index)
+            else:
+                predict_dictionary.update({predict_value:[predict_index]})
 
-        training_data = np.stack([np.asarray(self.training_data[0])[:, selected_dim[0]],
-                                        np.asarray(self.training_data[0])[:, selected_dim[1]]], axis=1)
+        return_value = mimic_env.get_return(state=list(predict_dictionary.values()))
+        print(return_value)
+
+    def train_2d_tree(self, training_data, selected_dim = (4, 6)):
+
+        training_data = np.stack([np.asarray(training_data[0])[:, selected_dim[0]],
+                                        np.asarray(training_data[0])[:, selected_dim[1]]], axis=1)
         data_number = 150
-        self.model.fit(training_data[:data_number], self.training_data[1][:data_number])
+        self.model.fit(training_data[:data_number], training_data[1][:data_number])
         plot_decision_boundary(input_data=training_data[:data_number],
-                               target_data = self.training_data[1][:data_number], tree_model=self.model)
+                               target_data = training_data[1][:data_number], tree_model=self.model)
 
 
 

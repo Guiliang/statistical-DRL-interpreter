@@ -67,11 +67,23 @@ def return_data(config, global_model_data_path):
     image_width = config.image_width
     # assert image_size == 64, 'currently only image size of 64 is supported'
     transform = transforms.Compose([
-        transforms.Resize((image_length, image_width)),
+        # transforms.Resize((image_length, image_width)),
         transforms.ToTensor(), ])
 
     if name.lower() == 'flappybird':
         root = os.path.join(dset_dir, 'flappybird/'+config.image_type)  # TODO: you might want to try colored?
+        train_kwargs = {'root': root, 'transform': transform}
+        dset = CustomImageFolder
+    elif name.lower() == 'assault-v0':
+        root = os.path.join(dset_dir, 'Assault-v0/'+config.image_type)  # TODO: you might want to try colored?
+        train_kwargs = {'root': root, 'transform': transform}
+        dset = CustomImageFolder
+    elif name.lower() == 'breakout-v0':
+        root = os.path.join(dset_dir, 'Breakout-v0/'+config.image_type)  # TODO: you might want to try colored?
+        train_kwargs = {'root': root, 'transform': transform}
+        dset = CustomImageFolder
+    elif name.lower() == 'spaceinvaders-v0':
+        root = os.path.join(dset_dir, 'SpaceInvaders-v0/'+config.image_type)  # TODO: you might want to try colored?
         train_kwargs = {'root': root, 'transform': transform}
         dset = CustomImageFolder
     # elif name.lower() == '3dchairs':
@@ -157,3 +169,5 @@ def handle_dict_list(dict_list_A, dict_list_B, option):
             if option == 'add':
                 dict_list_A[key] = list_B
     return dict_list_A
+
+

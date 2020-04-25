@@ -1,6 +1,6 @@
 DRL:
   Learn:
-    actions: 2  # number of valid actions
+    actions: 4  # number of valid actions
     gamma: 0.99  # decay rate of past observations
     observe: 100 #10000.  # timesteps to observe before training
     explore: 2000000.  # frames over which to anneal epsilon
@@ -11,20 +11,17 @@ DRL:
     frame_per_action: 5
     learning_rate: 0.000001
     cuda: True
-    ckpt_dir: '/DRL-interpreter-model/DRL/flappybird/'
+    ckpt_dir: '/DRL-interpreter-model/DRL/SpaceInvaders-v0/'
     ckpt_save_iter: 100
     max_iter: 10000
     ckpt_load: True
-    gmma: 0.99
-#    beta1_D: 0.5
-#    beta2_D: 0.9
-    input_image_size: 80
-    data_save_path: '/DRL-interpreter-model/data/flappybird/'
+    input_image_size: 84
+    data_save_path: '/DRL-interpreter-model/data/SpaceInvaders-v0/'
     action_type: 'discrete'
 
 DEG:
   Learn:
-    name : 'flappybird'  # 'main'
+    name : 'SpaceInvaders-v0'  # 'main'
     cuda : True
     max_iter: 1000000
     batch_size: 32
@@ -46,8 +43,8 @@ DEG:
     lr_E : 0.0002
     beta1_E : 0.5
     beta2_E : 0.9
-    ckpt_dir : '/DRL-interpreter-model/DEG/AAE/flappybird/'
-    output_dir: '/DRL-interpreter-model/DEG/AAE/flappybird/'
+    ckpt_dir : '/DRL-interpreter-model/DEG/AAE/SpaceInvaders-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/AAE/SpaceInvaders-v0/'
     viz_ta_iter: 10000
     ckpt_save_iter: 10000
     ckpt_load: True
@@ -55,17 +52,17 @@ DEG:
 
   FVAE:
     gamma: 6.4
-    lr_VAE: 0.0001
+    lr_VAE: 0.00005
     beta1_VAE : 0.9
     beta2_VAE : 0.999
-    lr_D : 0.0001
+    lr_D : 0.0005
     beta1_D : 0.5
     beta2_D : 0.9
     ckpt_save_iter: 10000
     ckpt_load: True
     output_save: True
-    ckpt_dir : '/DRL-interpreter-model/DEG/FVAE/flappybird/'
-    output_dir: '/DRL-interpreter-model/DEG/FVAE/flappybird/'
+    ckpt_dir : '/DRL-interpreter-model/DEG/FVAE/SpaceInvaders-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/FVAE/SpaceInvaders-v0/'
     viz_ta_iter: 10000
 
 Mimic:
@@ -74,7 +71,6 @@ Mimic:
     num_simulations: 100001
     replay_memory_size: 10000
     episodic_sample_number: 1000  # the number of selected data points
-    mcts_saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'
+    mcts_saved_dir: '/DRL-interpreter-model/MCTS/SpaceInvaders-v0/saved_model'
     max_k: 10
-    ignore_dim: '[2, 3, 8, 9]'
-
+    ignore_dim: '[0, 2, 8, 9, 10, 12, 18, 19]'

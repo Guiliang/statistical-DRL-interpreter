@@ -260,7 +260,7 @@ def train():
         max_epoch=1000,
     )
     trainer = SimpleTrainer() if num_gpu == 1 else AsyncMultiGPUTrainer(train_tower)
-    # launch_train_with_config(config, trainer)
+    launch_train_with_config(config, trainer)
 
 
 
@@ -303,4 +303,4 @@ if __name__ == '__main__':
     else:
         assert tf.test.is_gpu_available(), "Training requires GPUs!"
         logger.set_logger_dir(args.output)
-        # train()
+        train()

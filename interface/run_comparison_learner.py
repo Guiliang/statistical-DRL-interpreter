@@ -4,14 +4,13 @@ import traceback
 
 cwd = os.getcwd()
 import sys
+
 sys.path.append(cwd.replace('/interface', ''))
-print (sys.path)
+print(sys.path)
 from config.mimic_config import DRLMimicConfig
 from mimic_learner.learner import MimicLearner
 
 optparser = optparse.OptionParser()
-optparser.add_option("-r", "--round number", dest="ROUND_NUMBER", default=None,
-                     help="round number of mcts (default = None)")
 optparser.add_option("-a", "--action id", dest="ACTION_ID", default=0,
                      help="the action id to fit (default = 0)")
 optparser.add_option("-d", "--log dir", dest="LOG_DIR", default=None,
@@ -23,6 +22,7 @@ optparser.add_option("-m", "--method name", dest="METHOD_NAME", default=None,
 # optparser.add_option("-d", "--dir of just saved mcts", dest="MCTS_DIR", default=None,
 #                      help="dir of just saved mcts (default = None)")
 opts = optparser.parse_args()[0]
+
 
 def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -59,37 +59,34 @@ def run():
         global_model_data_path = "/Local-Scratch/oschulte/Galen"
     elif os.path.exists("/home/functor/scratch/Galen/project-DRL-Interpreter"):
         mimic_config_path = "/home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/" \
-                                 "environment_settings/{0}_config.yaml".format(game_name)
+                            "environment_settings/{0}_config.yaml".format(game_name)
         mimic_config = DRLMimicConfig.load(mimic_config_path)
         global_model_data_path = "/home/functor/scratch/Galen/project-DRL-Interpreter"
     else:
         raise EnvironmentError("Unknown running setting, please set up your own environment")
-    
+
     print('global path is : {0}'.format(global_model_data_path))
     if opts.LOG_DIR is not None:
         if os.path.exists(opts.LOG_DIR):
-            log_file =  open(opts.LOG_DIR, 'a')
+            log_file = open(opts.LOG_DIR, 'a')
         else:
             log_file = open(opts.LOG_DIR, 'w')
     else:
-        log_file=None
+        log_file = None
 
     try:
         print("\nRunning for game {0} with {1}".format(game_name, method), file=log_file)
         mimic_learner = MimicLearner(game_name=game_name,
-                                     method = method,
+                                     method=method,
                                      config=mimic_config,
-                                     deg_model_name = model_name,
+                                     deg_model_name=model_name,
                                      local_test_flag=local_test_flag,
                                      global_model_data_path=global_model_data_path,
                                      log_file=log_file)
-        # mimic_learner.test_mimic_model()
-        shell_round_number = int(opts.ROUND_NUMBER) if opts.ROUND_NUMBER is not None else None
-
-        mimic_learner.train_mimic_model(action_id = opts.ACTION_ID,
-                                        shell_round_number=shell_round_number,
-                                        log_file=log_file)
-        # mimic_learner.test_mimic_model(action_id= opts.ACTION_ID, log_file=log_file)
+        # mimic_learner.train_mimic_model(action_id=opts.ACTION_ID,
+        #                                 shell_round_number=shell_round_number,
+        #                                 log_file=log_file)
+        mimic_learner.test_mimic_model(action_id= opts.ACTION_ID, log_file=log_file)
 
         if log_file is not None:
             log_file.close()
@@ -99,7 +96,7 @@ def run():
             log_file.write(str(e))
             log_file.flush()
             log_file.close()
-        # sys.stderr.write('finish shell round {0}'.format(shell_round_number))
+            # sys.stderr.write('finish shell round {0}'.format(shell_round_number))
 
 
 if __name__ == "__main__":

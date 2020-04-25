@@ -25,7 +25,7 @@ c_PUCT = 0.01
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
 SPLIT_POOL = None
-PROCESS_NUMBER = 12
+PROCESS_NUMBER = 6
 
 
 class DummyNode:
@@ -111,6 +111,8 @@ class MCTSNode:
 
         # self.subset_split_flag = [True if len(state[j]) > 0 else False for j in range(len(state))]
         for j in range(len(state)):
+            # if len(state[j]) <= 0:
+            #     print("Error caught")
             assert len(state[j]) > 0
         self.child_N = []
         self.child_W = []
@@ -233,7 +235,8 @@ class MCTSNode:
         for dim in range(self.n_actions_types):
             if dim not in self.ignored_dim:
                 # self.random_seed += 1
-                noise_U = np.random.normal(child_U[dim], NOISE_VAR)
+                # noise_U = np.random.normal(child_U[dim], NOISE_VAR)
+                noise_U = child_U[dim]
                 # print("seed is {0} with number {1}".format(self.random_seed, str(list(noise_U))))
                 child_action_score_return[dim, :len(noise_U)] = (child_Q[dim] + noise_U)
                 # child_action_score_return.append((child_Q[dim] + noise_U))
@@ -271,6 +274,7 @@ class MCTSNode:
                 break
             for split_value in sorted_split_var:
                 if len(topK_value_index_list) < k:
+                    # print(current.split_var_index_dict.get(split_value))
                     topK_value_index_list += current.split_var_index_dict.get(split_value)
 
             child_action_score_all = np.ones([len(current.state), self.n_actions_types, dim_per_split]) * float('-inf')
@@ -330,9 +334,17 @@ class MCTSNode:
         state_subset = state[subset_index]
         total_length = len(delta_data_all)
         split_value_weight_list= []
+
+        check_all_flag = False
+        if split_gap < 1:
+            dim_per_split = len(split_values)
+            check_all_flag = True
         for split_index in range(dim_per_split):
             skip_flag = False
-            split_value = round(float(split_values[int(split_index * split_gap)]), 6)
+            if check_all_flag:
+                split_value = round(split_values[split_index].item(), 6)
+            else:
+                split_value = round(float(split_values[int(split_index * split_gap)]), 6)
             std_weighted_sum = float(0)
 
             split_subset_1 = []
@@ -358,6 +370,8 @@ class MCTSNode:
             new_state_list = mcts_state_to_list(new_state)
 
             action_new = "{0}_{1}_{2}".format(str(subset_index), str(dim), str(split_value))
+            # if action_new == '20_4_-0.056968':
+            #     print('find you!')
             if check_split_state_pair.get(new_state_list) is not None:
                 action = check_split_state_pair.get(new_state_list)
                 if action_new != action:
@@ -397,8 +411,7 @@ class MCTSNode:
             if not skip_flag:
                 child_N_subset_dim[split_value] = 0
                 child_W_subset_dim[split_value] = weight_std_reduction
-
-            split_value_weight_list.append([split_value, weight_std_reduction, skip_flag])
+                split_value_weight_list.append([split_value, weight_std_reduction, skip_flag])
 
 
         return child_N_subset_dim, child_W_subset_dim, check_split_state_pair, check_split_state_pair_new, split_value_weight_list
@@ -427,8 +440,7 @@ class MCTSNode:
             subset = self.state[subset_index]
             subset_data = None
             for data_index in subset:
-                data_line = np.expand_dims(np.concatenate([reference_data[data_index][0],
-                                                           reference_data[data_index][3]]), axis=0)
+                data_line = np.expand_dims(np.asarray(reference_data[data_index][0]),axis=0)
                 if subset_data is not None:
                     subset_data = np.concatenate([subset_data, data_line])
                 else:
@@ -470,9 +482,18 @@ class MCTSNode:
                             check_split_state_pair.update(check_split_state_pair_return)
                         else:
                             for state_list_str in check_split_state_pair_new.keys():
-                                if check_split_state_pair.get(state_list_str) is not None:
+                                if check_split_state_pair.get(state_list_str) is not None:  # remove duplicate splits
                                     action = check_split_state_pair_return[state_list_str].split('_')
+                                    # child_W_subset_dim_tmp = deepcopy(child_W_subset_dim)
                                     child_W_subset_dim[float(action[2])] = float('-inf')
+                                    eliminate_flag = False
+                                    for split_value_weight_record in split_value_weight_list:
+                                        if split_value_weight_record[0] == float(action[2]):
+                                            split_value_weight_record[1] = float('-inf')
+                                            eliminate_flag = True
+                                            break
+                                    assert eliminate_flag == True
+
                                 else:
                                     check_split_state_pair.update({state_list_str:check_split_state_pair_return[state_list_str]})
                         self.child_N[subset_index][dim] = child_N_subset_dim
@@ -601,6 +622,8 @@ class MCTSNode:
         """
 
         if action not in self.children:
+            # if action == '20_4_-0.056968':
+            #     print('find you!')
             # Obtain state following given action.
             new_state, new_var_list = TreeEnv.next_state(self.state, action, self.var_list)
             new_state_list = mcts_state_to_list(new_state)
@@ -830,7 +853,7 @@ class MCTS:
         before performing a step.
         """
         # self.agent_netw = agent_netw
-        self.tree_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir =='' else tree_save_dir
+        self.mcts_save_dir = '../mimic_learner/save_tmp/mcts_save' if tree_save_dir == '' else tree_save_dir
         self.TreeEnv = TreeEnv
         # self.simulations_per_move = simulations_per_move
         self.simulations_per_round = simulations_per_round
@@ -839,7 +862,6 @@ class MCTS:
         self.qs = None
         self.rewards = None
         self.searches_pi = None
-        self.moved_nodes = None
         self.states = None
 
         self.root = None
@@ -858,7 +880,6 @@ class MCTS:
         self.qs = []
         self.rewards = []
         self.searches_pi = []
-        self.moved_nodes = []
         self.states = []
         self.moved_node_str_dict_all = {}
         self.moved_node_child_dict_all = {}
@@ -872,7 +893,7 @@ class MCTS:
         np.random.seed(self.random_seed)
         while len(leaves) < num_parallel:
             if len(leaves) % 100 == 0:
-                mme = process.memory_info().rss
+                mme = float(process.memory_info().rss) / 1000000
                 print("Working on simulations {0} currently using memory {1}".format(str(len(leaves)), str(mme)) ,file=log_file)
                 log_file.flush()
             # print("_"*50)
@@ -899,10 +920,10 @@ class MCTS:
 
     def save_mcts(self, mode, current_simulations, action_id):
 
-        file_name = self.tree_save_dir + '_action{3}_{0}_plays{1}_{2}.pkl'.format(mode,
-                                                                        current_simulations,
-                                                                        datetime.today().strftime('%Y-%m-%d-%H'),
-                                                                                 action_id)
+        file_name = self.mcts_save_dir + '_action{3}_{0}_plays{1}_{2}.pkl'.format(mode,
+                                                                                  current_simulations,
+                                                                                  datetime.today().strftime('%Y-%m-%d-%H'),
+                                                                                  action_id)
         with open(file_name, 'wb') as f:
             pickle.dump(self, f)
 
@@ -957,10 +978,10 @@ class MCTS:
     #         assert self.root.child_N[action] != 0
     #     return action
 
-    def take_move(self, TreeEnv, log_file, process):
+    def take_move(self, TreeEnv, log_file, process, round_counter, saved_nodes_dir):
         root = self.root
-        if len(self.moved_nodes) > 0:
-            mother_state_str = ','.join(list(map(str, self.moved_nodes[-1].state[0])))
+        if round_counter > 1:
+            mother_state_str = ','.join(list(map(str, root.parent.state[0])))
         else:
             mother_state_str = None
         selected_action, child_visit_probability, node_child_dict_all, node_str_dict_all, final_splitted_states = \
@@ -992,23 +1013,26 @@ class MCTS:
         for candidate_action in candidate_actions2remove:
             del root.children[candidate_action]
             gc.collect()
-        mme_a = process.memory_info().rss
+        mme_a = float(process.memory_info().rss)/1000000
         print("Clean total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
-
+        root.parent.parent=None
         # mme_b = process.memory_info().rss
         # del root.child_N
         # del root.child_W
         print("The children of root is {0}".format(root.children), file=log_file)
-        self.moved_nodes.append(deepcopy(root))
-        mme_a = process.memory_info().rss
+        with open(saved_nodes_dir+'/node_counter_{0}_{1}.pkl'
+                .format(round_counter, datetime.today().strftime('%Y-%m-%d-%H')), 'wb') as f:
+            pickle.dump(obj=root, file=f)
+
+        mme_a = float(process.memory_info().rss) / 1000000
         print("Deep copy total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
 
         return_value = self.TreeEnv.get_return(self.root.state, self.root.depth)
         self.rewards.append(return_value)
         print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
               "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
-            self.moved_nodes[-1].level,
-            self.moved_nodes[-1].var_list,
+            root.level,
+            root.var_list,
             self.root.level,
             self.root.var_list,
             selected_action,
@@ -1193,22 +1217,28 @@ def merge_mcts(mcts_threads, mcts_origin, ignored_dim):
     return mcts_threads_new, mcts_origin_new
 
 
-def test_mcts(model_dir, TreeEnv, action_id):
-    with open(model_dir, 'rb') as f:
-        mcts_read = pickle.load(f)
-    mcts_read.root.print_tree(TreeEnv)
-    # final_splitted_states = mcts_read.select_final_actions(mode='testing', action_id=action_id, TreeEnv=TreeEnv)
-    final_splitted_states = mcts_read.moved_nodes[-1].state
+def test_mcts(saved_nodes_dir, TreeEnv, action_id):
+    nodes_dirs = os.listdir(saved_nodes_dir)
+    testing_moved_nodes = []
+    for counter in range(len(nodes_dirs)):
+        for nodes_dir in nodes_dirs:
+            if "node_counter_{0}_".format(counter+1) in nodes_dir:
+                with open(saved_nodes_dir+nodes_dir, 'rb') as f:
+                    print("reading saved node {0}".format(counter))
+                    mcts_node = pickle.load(f)
+                    mcts_node.states = []
+                    del mcts_node.split_var_index_dict
+                    del mcts_node.children
+                    del mcts_node.child_N
+                    del mcts_node.child_W
+                    testing_moved_nodes.append(mcts_node)
+                break
+
     # TODO: add me if you want the final a binary tree
     # print('\n The final binary tree is:')
     # mother_str = ','.join(list(map(str, mcts_read.moved_nodes[0].state[0])))
     # PBT = PrintBinaryTree(mcts_read.moved_node_str_dict_all, mcts_read.moved_node_child_dict_all)
     # PBT.print_final_binary_tree(mother_str=mother_str, indent_number=0)
-
-    testing_moved_nodes = []
-    for moved_node in mcts_read.moved_nodes:
-        moved_node.states = []
-        testing_moved_nodes.append(moved_node)
 
     return testing_moved_nodes
 
@@ -1245,6 +1275,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         from tqdm import tqdm
         pbar = tqdm(total=num_simulations)
         current_simulations = 0
+        saved_nodes_dir = None
     else:
         shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved.pkl'
         round_counter = shell_round_number*save_gap
@@ -1256,10 +1287,16 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
             with open(shell_saved_model_dir, 'rb') as f:
                 mcts = pickle.load(f)
             mcts.simulations_per_round = simulations_per_round
+            saved_nodes_dir = mcts.saved_nodes_dir
         else:
             mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
             mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
                                    n_action_types=TreeEnv.n_action_types, ignored_dim=ignored_dim)
+            saved_nodes_dir = mcts_saved_dir.replace('saved_model','saved_nodes')+'_action'+str(action_id)+'_'\
+                              +datetime.today().strftime('%Y-%m-%d')
+            mcts.saved_nodes_dir=saved_nodes_dir
+            if not os.path.exists(saved_nodes_dir):
+                os.mkdir(saved_nodes_dir)
 
         current_simulations = simulations_per_round * round_counter
 
@@ -1308,7 +1345,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         # display_top(snapshot)
         mcts.root.print_tree(TreeEnv, writer=log_file)
         log_file.flush()
-        mcts.take_move(TreeEnv, log_file, process)
+        mcts.take_move(TreeEnv, log_file, process, round_counter, saved_nodes_dir)
         log_file.flush()
 
 

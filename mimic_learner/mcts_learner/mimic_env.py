@@ -23,6 +23,9 @@ class MimicEnv(StaticEnv):
         else:
             for transition in data:
                 self.data_all.append(transition)
+
+    def assign_data(self, data):
+        self.data_all = data
         # delta_all = []
         # for data_line in self.data_all:
         #     delta_all.append(data_line[-1])
@@ -70,20 +73,20 @@ class MimicEnv(StaticEnv):
         subset_delta2 = []
         for data_index in state[subset_index]:
             data_line = self.data_all[data_index]
-            if dim < float(self.n_action_types) / 2:
-                if data_line[0][dim] < split_value:
-                    subset_state1.append(data_index)
-                    subset_delta1.append(self.data_all[data_index][-1])
-                else:
-                    subset_state2.append(data_index)
-                    subset_delta2.append(self.data_all[data_index][-1])
+            # if dim < float(self.n_action_types) / 2:
+            if data_line[0][dim] < split_value:
+                subset_state1.append(data_index)
+                subset_delta1.append(self.data_all[data_index][-1])
             else:
-                if data_line[3][dim - int(self.n_action_types / 2)] < split_value:
-                    subset_state1.append(data_index)
-                    subset_delta1.append(self.data_all[data_index][-1])
-                else:
-                    subset_state2.append(data_index)
-                    subset_delta2.append(self.data_all[data_index][-1])
+                subset_state2.append(data_index)
+                subset_delta2.append(self.data_all[data_index][-1])
+            # else:
+            #     if data_line[3][dim - int(self.n_action_types / 2)] < split_value:
+            #         subset_state1.append(data_index)
+            #         subset_delta1.append(self.data_all[data_index][-1])
+            #     else:
+            #         subset_state2.append(data_index)
+            #         subset_delta2.append(self.data_all[data_index][-1])
         del state[subset_index]
         state.insert(subset_index, subset_state2)
         state.insert(subset_index, subset_state1)
