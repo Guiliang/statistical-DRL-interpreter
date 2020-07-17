@@ -188,7 +188,10 @@ class Disentanglement(object):
                 D_z = self.fvaeD(z)
                 vae_tc_loss = (D_z[:, :1] - D_z[:, 1:]).mean()
 
-                vae_loss = vae_recon_loss + vae_kld + self.gamma * vae_tc_loss
+                ones_z = torch.ones([self.batch_size, self.z_dim], dtype=torch.long, device=self.device)
+                vae_var_loss = torch.abs(torch.squeeze(logvar.exp())-ones_z).mean()
+
+                vae_loss = vae_recon_loss + vae_kld + self.gamma * vae_tc_loss + (self.gamma/100)*vae_var_loss
 
                 self.optim_VAE.zero_grad()
                 vae_loss.backward(retain_graph=True)

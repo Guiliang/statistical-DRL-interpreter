@@ -11,7 +11,7 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'SpaceInvaders-v0'
+    game_name = 'flappybird'
     deg_type = 'FVAE'
     if game_name == 'Assault-v0':
         config_path = "../environment_settings/assault_v0_config.yaml"
@@ -45,18 +45,18 @@ def run():
     else:
         raise ValueError('Unknown deg type {0}'.format(deg_type))
 
-    # if game_name == "flappybird":
-    #     model_name = 'FVAE-1000000'
-    # elif game_name == "Assault-v0":
-    #     # model_name = "FVAE-1000000"
-    #     model_name = "FVAE-1000000-bak-4-21"
-    # elif game_name == "Breakout-v0":
-    #     model_name = "FVAE-1000000"
-    # elif game_name == "SpaceInvaders-v0":
-    #     model_name = "FVAE-1000000"
-    # else:
-    #     raise ValueError ("Unknown game name {0}".format(game_name))
-    # DEG.test(model_name =model_name, testing_output_dir='../data_disentanglement/output/{0}/'.format(game_name))
+    if game_name == "flappybird":
+        model_name = 'FVAE-1000000'
+    elif game_name == "Assault-v0":
+        # model_name = "FVAE-1000000"
+        model_name = "FVAE-1000000-bak-4-21"
+    elif game_name == "Breakout-v0":
+        model_name = "FVAE-1000000"
+    elif game_name == "SpaceInvaders-v0":
+        model_name = "FVAE-1000000"
+    else:
+        raise ValueError ("Unknown game name {0}".format(game_name))
+    DEG.test(model_name =model_name, testing_output_dir='../data_disentanglement/output/{0}/'.format(game_name))
 
 
 if __name__ == "__main__":

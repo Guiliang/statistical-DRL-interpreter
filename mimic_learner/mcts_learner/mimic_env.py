@@ -1,8 +1,11 @@
 from copy import deepcopy
-
+import math
 import numpy as np
 # from scipy.stats import norm
+from sklearn.tree import DecisionTreeRegressor
+
 from mimic_learner.mcts_learner.static_env import StaticEnv
+from utils.model_utils import tree_construct_loss
 
 UP = 0
 RIGHT = 1
@@ -134,10 +137,46 @@ class MimicEnv(StaticEnv):
     def get_obs_for_states(states):
         return np.array(states)
 
-    def get_return(self, state, step_idx=None):
-        std_weighted_sum = 0
+    def regression_tree_rollout(self, state, is_training=False,max_node=100):
         subsection_lengths = [len(subsection) for subsection in state]
         total_length = float(sum(subsection_lengths))
+        predict_dictionary = {}
+        for subsection in state:
+            sub_max_node = len(subsection)/total_length*(max_node-len(state)+1)
+
+            training_data = []
+            training_labels = []
+            for i in range(len(subsection)):
+                training_data.append(self.data_all[subsection[i]][0])
+                training_labels.append(self.data_all[subsection[i]][-1])
+            cart_model = DecisionTreeRegressor(max_depth=sub_max_node,
+                                               criterion= 'mse',
+                                               splitter='best')
+            cart_model.fit(training_data, training_labels)
+
+            predictions = cart_model.predict(training_data)
+            for predict_index in range(len(predictions)):
+                predict_value = predictions[predict_index]
+                if predict_value in predict_dictionary.keys():
+                    predict_dictionary[predict_value].append(predict_index)
+                else:
+                    predict_dictionary.update({predict_value:[predict_index]})
+
+        return_value = self.get_return(state=list(predict_dictionary.values()), is_training=is_training)
+
+        return return_value
+
+    def get_return(self, state,
+                   step_idx=None,
+                   apply_structure_cost = False,
+                   apply_variance_reduction = False,
+                   is_training = False
+                   ):
+        var_weighted_sum = 0
+        # log_var_weighted_sum = 0
+        subsection_lengths = [len(subsection) for subsection in state]
+        total_length = float(sum(subsection_lengths))
+        ses_all = []
         for subsection in state:
             delta_all = []
             for i in range(len(subsection)):
@@ -145,12 +184,36 @@ class MimicEnv(StaticEnv):
             if len(delta_all) > 0:
                 # mu, std = norm.fit(delta_all)
                 # var_tmp = std**2
+                mean = np.mean(delta_all)
+                for i in range(len(subsection)):
+                    ses_all.append((mean-self.data_all[subsection[i]][-1])**2)
                 var = np.var(delta_all)
-                std_weighted_sum += (float(len(subsection)) / total_length) * var
+                var_weighted_sum += (float(len(subsection)) / total_length) * var
+                if var < 1e-6:
+                    var = 1e-6
+                # log_var_weighted_sum += (float(len(subsection)) / total_length) * math.log(var)
         # if self.initial_std - std_weighted_sum > 0.01306:
         #     print('testing')
+        mse = sum(ses_all) / len(ses_all)
+
+        if is_training:
+            return self.initial_var - var_weighted_sum
+
+        if apply_variance_reduction:
+            return self.initial_var - var_weighted_sum
+
+        log_var_weighted_sum = math.log(var_weighted_sum)
+        if apply_structure_cost:
+            structure_cost = 0
+            leaf_number = float(len(state))
+            if leaf_number > 1:
+                structure_cost = tree_construct_loss(leaf_number)
+            return -log_var_weighted_sum - 0.05*structure_cost
+            # return math.log(self.initial_var) -log_var_weighted_sum-structure_cost
+        else:
+            return -log_var_weighted_sum
+            # return math.log(self.initial_var) - log_var_weighted_sum
         # TODO: punish the split number
-        return self.initial_var - std_weighted_sum
 
 
 

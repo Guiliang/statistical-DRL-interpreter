@@ -28,6 +28,14 @@ def kl_divergence(mu, logvar):
     kld = -0.5 * (1 + logvar - mu ** 2 - logvar.exp()).sum(1).mean()
     return kld
 
+def tree_construct_loss(leaf_number):
+    entropy_prob = leaf_number / (2 * leaf_number - 1)
+    big_o = 1/leaf_number
+    structure_cost = math.log((2 * leaf_number - 1) ** 2 / ((leaf_number ** 1.5) * (leaf_number - 1) ** 0.5)) + \
+                     (2 * leaf_number - 1) * (-entropy_prob * math.log(entropy_prob) - (1 - entropy_prob) * math.log(1 - entropy_prob))+\
+                     big_o
+    return structure_cost
+
 
 def permute_dims(z):
     assert z.dim() == 2
@@ -114,19 +122,26 @@ def store_state_action_data(img_colored, action_values, reward, action_index,
     else:
         img_colored_save = img_colored
 
-    origin_save_dir = save_image_path + 'origin/images/' + game_name + '-' + str(iteration_number) + '_origin.png'
+    origin_save_dir = save_image_path + 'origin/images/{0}-{1}_action{2}_origin.png'.format(game_name,
+                                                                                            iteration_number,
+                                                                                            action_index)
     tu.save_image(ttf.to_tensor(img_colored_save), open(origin_save_dir, 'wb'))
 
     img_colored_save_resized = ttf.resize(img_colored_save, size=(64, 64))
     # img_colored_save_resized.show()
-    color_save_dir = save_image_path + 'color/images/' + game_name + '-' + str(iteration_number) + '_color.png'
+    color_save_dir = save_image_path + 'color/images/{0}-{1}_action{2}_color.png'.format(game_name,
+                                                                                         iteration_number,
+                                                                                         action_index)
     tu.save_image(ttf.to_tensor(img_colored_save_resized), open(color_save_dir,'wb'))
+    gray_save_dir = save_image_path + 'gray/images/{0}-{1}_action{2}_gray.png'.format(game_name,
+                                                                                      iteration_number,
+                                                                                      action_index)
 
-    gray_save_dir = save_image_path + 'gray/images/' + game_name + '-' + str(iteration_number) + '_gray.png'
     img_gray_save = ttf.to_grayscale(img_colored_save_resized, num_output_channels=1)
     tu.save_image(ttf.to_tensor(img_gray_save), open(gray_save_dir, 'wb'))
-
-    binary_save_dir = save_image_path + 'binary/images/' + game_name + '-' + str(iteration_number) + '_binary.png'
+    binary_save_dir = save_image_path + 'binary/images/{0}-{1}_action{2}_binary.png'.format(game_name,
+                                                                                      iteration_number,
+                                                                                      action_index)
     x_t_save = ttf.to_tensor(img_gray_save)
     min_value = torch.min(x_t_save)
     x_t_b_save = x_t_save > min_value
@@ -143,17 +158,22 @@ def compute_diff_masked_images(images_tensor):
             image_diff = images_tensor[j] - images_tensor[j + m]  # TODO: maybe try grey and binary image
             image_dim_diff_sum += image_diff.abs().cpu()
             image_number += 1
-    tmp = image_dim_diff_sum[0].numpy()
+    # tmp = image_dim_diff_sum[0].numpy()
     image_dim_diff_average = image_dim_diff_sum[0] / image_number
     image_dim_mask = image_dim_diff_average > 0.1
+    # images_dim_mask = image_dim_mask.unsqueeze(0).\
+    #     repeat(inter_dimension, 1, 1)
+    # blue_mask = images_dim_mask.double() * 0.5
+    # masked_images_tensor = images_tensor.cpu()
+    # masked_images_tensor[:,2,:,:] += blue_mask
 
     images_dim_mask = image_dim_mask.unsqueeze(0).unsqueeze(0).\
         repeat(inter_dimension, 3, 1, 1)
     masked_images_tensor = torch.mul(images_tensor.cpu(), images_dim_mask)
-    # tmp =masked_dim_gif_tensor.numpy()
-    gray_mask = (torch.ones(images_dim_mask.size()) - images_dim_mask.double()) * 0.5
+    # tmp =images_tensor.cpu().numpy()
+    gray_mask = (torch.ones(images_dim_mask.size()) - images_dim_mask.double()) * 0.4
+    # masked_images_tensor[:,2,:,:] += gray_mask[:,2,:,:]
     masked_images_tensor += gray_mask
-
     return masked_images_tensor
 
 
@@ -294,33 +314,35 @@ class SpectralNorm(nn.Module):
 
 
 
-def visualize_split(selected_action, state, data_all, decoder, device, z_dim, level):
+def visualize_split(selected_action, state, data_all, decoder, device, z_dim, image_id):
     selected_state_index = int(selected_action.split('_')[0])
     selected_dim = int(selected_action.split('_')[1])
     selected_split_value = float(selected_action.split('_')[2])
-    splitted_states = state[selected_state_index:selected_state_index + 2]
-
+    # splitted_states = state[selected_state_index:selected_state_index + 2]
+    splitted_states = state
     splitted_states_avg = []
     state_features_all = []
     for state_index in range(len(splitted_states)):
         state_features = []
         state = splitted_states[state_index]
         for data_index in state:
-            z_index = np.concatenate([data_all[data_index][0],
-                                      data_all[data_index][3]], axis=0)
+            # z_index = np.concatenate([data_all[data_index][0],
+            #                           data_all[data_index][3]], axis=0)
+            z_index = data_all[data_index][0]
             state_features.append(z_index)
             state_features_all.append(z_index)
         state_features_avg = np.average(np.asarray(state_features), axis=0)
         splitted_states_avg.append(state_features_avg)
-        print(splitted_states_avg)
+        # print(splitted_states_avg)
     state_features_all_avg = np.average(np.asarray(state_features_all), axis=0)
     x_recon_all = None
     for state_index in range(len(splitted_states_avg)):
-        state_features_avg = state_features_all_avg
+        state_features_avg = np.copy(state_features_all_avg)
         state_features_avg[selected_dim] = splitted_states_avg[state_index][selected_dim]
-        z_1_state = build_decode_input(state_features_avg[:z_dim])
-        z_2_state = build_decode_input(state_features_avg[z_dim:])
-        z_state = torch.cat([z_1_state, z_2_state], axis=0)
+        # state_features_avg = splitted_states_avg[state_index]
+        z_state = build_decode_input(state_features_avg[:z_dim])
+        # z_2_state = build_decode_input(state_features_avg[z_dim:])
+        # z_state = torch.cat([z_1_state, z_2_state], axis=0)
         with torch.no_grad():
             x_recon = F.sigmoid(decoder(z_state.to(device))).data
 
@@ -329,11 +351,17 @@ def visualize_split(selected_action, state, data_all, decoder, device, z_dim, le
         else:
             x_recon_all = torch.stack([x_recon_all, x_recon], axis=0)
 
-    x_recon_all = torch.cat([x_recon_all[:, 0, :, :, :], x_recon_all[:, 1, :, :, :]], axis=-2)
+    # x_recon_all = torch.cat([x_recon_all[:, 0, :, :, :], x_recon_all[:, 1, :, :, :]], axis=-2)
+    x_recon_all = torch.squeeze(x_recon_all, 1)
     masked_images = compute_diff_masked_images(x_recon_all)
     # masked_images = x_recon_all
-    masked_images = torch.stack(torch.split(masked_images, int(masked_images.shape[-2] / 2), dim=-2), axis=1)
-    save_image(tensor=masked_images[0], fp="../mimic_learner/action_images_plots/level_{0}_action_{1}_image_left.jpg".
-               format(level, selected_action), nrow=2, pad_value=1)
-    save_image(tensor=masked_images[1], fp="../mimic_learner/action_images_plots/level_{0}_action_{1}_image_right.jpg".
-               format(level, selected_action), nrow=2, pad_value=1)
+    # masked_images = torch.stack(torch.split(masked_images, int(masked_images.shape[-2] / 2), dim=-2), axis=1)
+    save_image(tensor=masked_images[0], fp="../mimic_learner/action_images_plots/img_{0}_split_{1}_image_left.jpg".
+               format(image_id, selected_action), nrow=1, pad_value=1)
+    save_image(tensor=masked_images[1], fp="../mimic_learner/action_images_plots/img_{0}_split_{1}_image_right.jpg".
+               format(image_id, selected_action), nrow=1, pad_value=1)
+
+if __name__ == "__main__":
+    for l in range(2, 60):
+        structure_cost = tree_construct_loss(leaf_number=float(l))
+        print(structure_cost)

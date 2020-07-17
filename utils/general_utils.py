@@ -171,3 +171,34 @@ def handle_dict_list(dict_list_A, dict_list_B, option):
     return dict_list_A
 
 
+def compute_regression_results(predictions, labels):
+    ae_sum = []
+    se_sum = []
+
+    length = len(predictions)
+    for index in range(0, length):
+        ae_sum.append(abs(predictions[index] - labels[index]))
+        se_sum.append((predictions[index] - labels[index]) ** 2)
+
+    mae = float(sum(ae_sum)) / length
+    rmse = (float(sum(se_sum)) / length) ** 0.5
+
+    return mae, rmse
+
+def count_actions():
+    action_values_dir = '/Local-Scratch/PycharmProjects/statistical-DRL-interpreter/example_data/flappybird/'
+    action_count = {}
+    with open(action_values_dir + '/action_values.txt', 'r') as f:
+        action_values = f.readlines()
+    for action_value in action_values[:40000]:
+        action_value_items = action_value.split(',')
+        action_index = int(action_value_items[0])
+        if action_count.get(action_index) is not None:
+            action_count[action_index]+=1
+        else:
+            action_count.update({action_index:1})
+
+    print(action_count)
+
+if __name__ == "__main__":
+    count_actions()

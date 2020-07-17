@@ -1,0 +1,8 @@
+Training action 0: return:0.09699319119112867, mae:0.0395, rmse:0.0824, leaves:170.0
+Training action 1: return:0.11542655149703152, mae:0.04, rmse:0.1039, leaves:230.0
+Training method m5-mt: Avg.return:0.1062098713440801, Avg.mae:0.03975, Avg.rmse:0.09315000000000001, Avg.leaves:200.0
+
+Testing action 0: return:0.09166784080611384, mae:0.0426, rmse:0.0613, leaves:170.0
+Testing action 1: return:0.1348906222307131, mae:0.0531, rmse:0.1476, leaves:230.0
+Testing method m5-mt: Avg.return:0.11327923151841347, Avg.mae:0.047850000000000004, Avg.rmse:0.10445, Avg.leaves:200.0
+

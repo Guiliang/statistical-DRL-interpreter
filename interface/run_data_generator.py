@@ -10,7 +10,7 @@ from data_generator.generator import DRLDataGenerator
 def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    game_name = 'SpaceInvaders-v0'
+    game_name = 'Breakout-v0'
     print('Running game {0}'.format(game_name))
     if game_name == 'flappybird':
         mimic_env_config_path = "../environment_settings/" \

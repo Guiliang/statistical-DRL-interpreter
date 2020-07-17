@@ -12,7 +12,7 @@ from mimic_learner.learner import MimicLearner
 optparser = optparse.OptionParser()
 optparser.add_option("-r", "--round number", dest="ROUND_NUMBER", default=None,
                      help="round number of mcts (default = None)")
-optparser.add_option("-a", "--action id", dest="ACTION_ID", default=0,
+optparser.add_option("-a", "--action id", dest="ACTION_ID", default="0",
                      help="the action id to fit (default = 0)")
 optparser.add_option("-d", "--log dir", dest="LOG_DIR", default=None,
                      help="the dir of log")
@@ -20,6 +20,8 @@ optparser.add_option("-g", "--game name", dest="GAME_NAME", default=None,
                      help="the name of running game")
 optparser.add_option("-m", "--method name", dest="METHOD_NAME", default=None,
                      help="the name of applied method")
+optparser.add_option("-l", "--launch time", dest="LAUNCH_TIME", default=None,
+                     help="the time we launch this program")
 # optparser.add_option("-d", "--dir of just saved mcts", dest="MCTS_DIR", default=None,
 #                      help="dir of just saved mcts (default = None)")
 opts = optparser.parse_args()[0]
@@ -35,7 +37,7 @@ def run():
     if opts.METHOD_NAME is not None:
         method = opts.METHOD_NAME
     else:
-        method = 'm5-rt'
+        method = 'mcts'
 
     if game_name == 'flappybird':
         model_name = 'FVAE-1000000'
@@ -83,13 +85,15 @@ def run():
                                      local_test_flag=local_test_flag,
                                      global_model_data_path=global_model_data_path,
                                      log_file=log_file)
-        # mimic_learner.test_mimic_model()
+        # mimic_learner.test_mimic_model(action_id= int(opts.ACTION_ID), log_file=log_file)
         shell_round_number = int(opts.ROUND_NUMBER) if opts.ROUND_NUMBER is not None else None
 
-        mimic_learner.train_mimic_model(action_id = opts.ACTION_ID,
+        mimic_learner.train_mimic_model(action_id = int(opts.ACTION_ID),
                                         shell_round_number=shell_round_number,
-                                        log_file=log_file)
-        # mimic_learner.test_mimic_model(action_id= opts.ACTION_ID, log_file=log_file)
+                                        log_file=log_file,
+                                        launch_time = opts.LAUNCH_TIME,
+                                        data_type = 'latent',
+                                        run_mcts=True)
 
         if log_file is not None:
             log_file.close()

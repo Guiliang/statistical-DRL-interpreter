@@ -1,10 +1,12 @@
 from datetime import datetime
 import ast
 import os
+
+import logging
 import torch
 import numpy as np
 from copy import deepcopy
-
+import torch.nn.functional as F
 from mimic_learner.comparsion_learners.m5 import generate_weka_training_data, M5Tree
 from mimic_learner.mcts_learner.mcts import test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
@@ -13,12 +15,15 @@ from PIL import Image
 import torchvision.transforms.functional as ttf
 from mimic_learner.comparsion_learners.cart import CARTRegressionTree
 
-from utils.model_utils import visualize_split
+from utils.model_utils import visualize_split, build_decode_input
+
+pil_logger = logging.getLogger('PIL')
+pil_logger.setLevel(logging.INFO)
 
 
 class MimicLearner():
     def __init__(self, game_name, method, config, deg_model_name,
-                 local_test_flag, global_model_data_path, log_file):
+                 local_test_flag, global_model_data_path, log_file, options=[]):
         self.mimic_env = MimicEnv(n_action_types=config.DEG.Learn.z_dim)
         self.z_dim = config.DEG.Learn.z_dim
         self.game_name = game_name
@@ -29,20 +34,27 @@ class MimicLearner():
         self.num_simulations = config.Mimic.Learn.num_simulations
         self.episodic_sample_number = config.Mimic.Learn.episodic_sample_number
         self.data_save_dir = self.global_model_data_path + config.DEG.Learn.dset_dir
-        self.image_type = config.DEG.Learn.image_type
+        # self.image_type = config.DEG.Learn.image_type
+        self.image_type = None
         self.iteration_number = 0
         self.method = method
         if 'cart' in self.method:
-            self.mimic_model = CARTRegressionTree()
+            self.mimic_model = CARTRegressionTree(model_name=self.method, options=options)
         elif 'm5' in self.method:
-            self.mimic_model = M5Tree(model_name=self.method)
+            self.mimic_model = M5Tree(model_name=self.method, options=options)
         else:
             self.mimic_model = None
 
         if self.method == 'mcts' or self.method == 'cart-fvae':
+            self.ignored_dim = ast.literal_eval(config.Mimic.Learn.ignore_dim)
+            print("Ignored dim is {0}".format(config.Mimic.Learn.ignore_dim), file=log_file)
             # initialize dientangler
             self.dientangler = Disentanglement(config, 'FVAE' , local_test_flag, self.global_model_data_path)
             self.dientangler.load_checkpoint(ckptname=deg_model_name, testing_flag=True, log_file=log_file)
+            if len(options) > 0:
+                self.binary_max_node = options[1]
+                self.saved_model_c_puct = options[3]
+                pass
 
         # if not local_test_flag:
         #     self.dientangler.load_checkpoint()
@@ -52,58 +64,74 @@ class MimicLearner():
         self.memory = None
         self.mcts_saved_dir = "" if local_test_flag else config.Mimic.Learn.mcts_saved_dir
         self.max_k = config.Mimic.Learn.max_k
-        self.ignored_dim = ast.literal_eval(config.Mimic.Learn.ignore_dim)
-        print("Ignored dim is {0}".format(config.Mimic.Learn.ignore_dim), file=log_file)
 
         self.shell_saved_model_dir = self.global_model_data_path + self.mcts_saved_dir
 
 
 
-    def data_loader(self, episode_number, target):
+    def data_loader(self, episode_number, target, action_id):
         self.memory = []
         if target == "raw":
-            self.image_type = 'color'
+            self.image_type = 'origin'
+        elif target == 'latent':
+            self.image_type = 'origin'
+        else:
+            self.image_type = target
 
         def gather_data_values(action_value):
             action_value_items = action_value.split(',')
             action_index = int(action_value_items[0])
-            action_values_list = []
-            for i in range(self.action_number):
-                action_values_list.append(float(action_value_items[i + 1]))
+            action_values_list = np.zeros([self.action_number])
+            value = 0
+            if self.game_name == 'flappybird':
+                for i in range(self.action_number):
+                    action_values_list[i] = float(action_value_items[i + 1])
+            elif self.game_name == 'Assault-v0' or self.game_name == 'SpaceInvaders-v0':
+                value = float(action_value_items[1])
+            else:
+                raise ValueError('Unknown game {0}'.format(self.game_name))
             reward = float(action_value_items[-1])
             if reward > 1:
                 reward = 1
-            return action_index, action_values_list, reward
+            return action_index, action_values_list, reward, value
 
         with open(self.data_save_dir + '/' + self.game_name + '/action_values.txt', 'r') as f:
             action_values = f.readlines()
 
-        image = Image.open('{0}/{1}/{2}/images/{1}-{3}_{2}.png'.format(self.data_save_dir,
-                                                                       self.game_name,
-                                                                       self.image_type,
-                                                                       self.iteration_number))
+        [action_index_t0, action_values_list_t0,
+         reward_t0, value_t0] = gather_data_values(action_values[self.iteration_number])
+        image = Image.open('{0}/{1}/{2}/images/{1}-{3}_action{4}_{2}.png'.format(self.data_save_dir,
+                                                                                 self.game_name,
+                                                                                 self.image_type,
+                                                                                 self.iteration_number,
+                                                                                 action_index_t0))
 
-        action_index_t0, action_values_list_t0, reward_t0 = gather_data_values(action_values[self.iteration_number])
         if target == "latent":
             x_t0_resized = image
             with torch.no_grad():
                 x_t0 = ttf.to_tensor(x_t0_resized).unsqueeze(0).to(self.dientangler.device)
                 z0 = self.dientangler.VAE.encode(x_t0).squeeze()[:self.z_dim]
                 z0 = z0.cpu().numpy()
-        elif target == "raw":
+        elif target == "raw" or target == 'color' or target == 'binary':
             flatten_image_t0 = np.array(image).flatten()
         else:
             raise ValueError("Unknown data loader target {0}".format(target))
+        data_length = self.episodic_sample_number * episode_number-self.iteration_number
+        while len(self.memory) < data_length:
+            [action_index_t1, action_values_list_t1,
+             reward_t1, value_t1] = gather_data_values(action_values[self.iteration_number + 1])
+            if self.game_name == 'flappybird':
+                delta = max(action_values_list_t1) - action_values_list_t0[action_index_t0] + reward_t0
+            elif self.game_name == 'Assault-v0' or self.game_name == 'SpaceInvaders-v0':
+                delta = value_t1 - value_t0 + reward_t0
+            else:
+                raise ValueError('Unknown game {0}'.format(self.game_name))
 
-        while self.iteration_number < self.episodic_sample_number * episode_number:
-            action_index_t1, action_values_list_t1, reward_t1 = gather_data_values(
-                action_values[self.iteration_number + 1])
-            delta = max(action_values_list_t1) - action_values_list_t0[action_index_t0] + reward_t0
-
-            image = Image.open('{0}/{1}/{2}/images/{1}-{3}_{2}.png'.format(self.data_save_dir,
-                                                                           self.game_name,
-                                                                           self.image_type,
-                                                                           self.iteration_number + 1))
+            image = Image.open('{0}/{1}/{2}/images/{1}-{3}_action{4}_{2}.png'.format(self.data_save_dir,
+                                                                                     self.game_name,
+                                                                                     self.image_type,
+                                                                                     self.iteration_number + 1,
+                                                                                     action_index_t1))
             if target == "latent":
                 x_t1_resized = image
                 with torch.no_grad():
@@ -111,11 +139,13 @@ class MimicLearner():
                     z1 = self.dientangler.VAE.encode(x_t1).squeeze()[:self.z_dim]
                     z1 = z1.cpu().numpy()
                 # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
-                self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
+                if action_index_t0 == action_id:
+                    self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
                 z0 = z1
-            elif target == "raw":
+            elif target == "raw" or target == 'color' or target == 'binary':
                 flatten_image_t1 = np.array(image).flatten()
-                self.memory.append([flatten_image_t0, action_index_t0, reward_t0, flatten_image_t1, delta])
+                if action_index_t0 == action_id:
+                    self.memory.append([flatten_image_t0, action_index_t0, reward_t0, flatten_image_t1, delta])
                 flatten_image_t0 = flatten_image_t1
             else:
                 raise ValueError("Unknown data loader target {0}".format(target))
@@ -124,63 +154,191 @@ class MimicLearner():
             action_index_t0 = action_index_t1
             action_values_list_t0 = action_values_list_t1
             reward_t0 = reward_t1
+            value_t0 = value_t1
+
+        print('loading finished')
 
 
 
-    def predict(self, data, action_id, saved_nodes_dir, visualize_flag=False):
+    def iterative_read_binary_tree(self, binary_node, log_file, selected_binary_node_index=[],
+                                   visualize_flag=False, indent_number=0, img_id=0):
+
+        # if binary_node.level >= self.binary_max_node:
+        #     selected_binary_node_index.append(binary_node)
+        #     return selected_binary_node_index, img_id-1
+
+        if binary_node.left_child is None and binary_node.right_child is None:
+            selected_binary_node_index.append(binary_node)
+            print("---" * indent_number + 'Leaf Node with action {0} and Impact {1}.'.format(
+                binary_node.action,
+                binary_node.prediction
+            ),
+                  file=log_file)
+            return selected_binary_node_index, img_id-1
+
+        print("---" * indent_number + 'Split Node with action {0} and Impact {1} and Image id {2}.'.format(
+            binary_node.action,
+            binary_node.prediction,
+            img_id
+        ),
+              file=log_file)
+
+        if visualize_flag and indent_number == 0:
+            state_features_all = []
+            for data_index in binary_node.state:
+                z_index = self.mimic_env.data_all[data_index][0]
+                state_features_all.append(z_index)
+            state_features_all_avg = np.average(np.asarray(state_features_all), axis=0)
+            z_state = build_decode_input(state_features_all_avg)
+            with torch.no_grad():
+                x_recon = F.sigmoid(self.dientangler.VAE.decode(z_state.to(self.dientangler.device))).data
+                from torchvision.utils import save_image
+                save_image(tensor=x_recon,
+                           fp="../mimic_learner/action_images_plots/img_root_image.jpg", nrow=1, pad_value=1)
+
+        indent_number+=1
+
+        if visualize_flag:
+            decoder = self.dientangler.VAE.decode
+            device = self.dientangler.device
+            z_dim = int(self.mimic_env.n_action_types)
+            data_all = self.mimic_env.data_all
+            visualize_split(binary_node.action, [binary_node.left_child.state, binary_node.right_child.state],
+                            data_all, decoder, device, z_dim, img_id)
+
+        selected_binary_node_index, img_id = self.iterative_read_binary_tree(binary_node.left_child,
+                                                                             log_file,
+                                                                             selected_binary_node_index,
+                                                                             visualize_flag,
+                                                                             indent_number,
+                                                                             img_id + 1)
+        selected_binary_node_index, img_id = self.iterative_read_binary_tree(binary_node.right_child,
+                                                                             log_file,
+                                                                             selected_binary_node_index,
+                                                                             visualize_flag,
+                                                                             indent_number,
+                                                                             img_id + 1)
+
+        return selected_binary_node_index, img_id
+
+    def predict_mcts(self, data, action_id, saved_nodes_dir, log_file, visualize_flag=False):
         self.mimic_env.assign_data(data)
         init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
         moved_nodes = test_mcts(saved_nodes_dir=saved_nodes_dir, TreeEnv=self.mimic_env, action_id=action_id)
-        level = 0
+        return self.generate_prediction_results(init_state, init_var_list, moved_nodes,
+                                                self.binary_max_node, log_file, visualize_flag)
+
+    def predict_mcts_by_splits(self, action_id, saved_nodes_dir):
+        init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+        moved_nodes = test_mcts(saved_nodes_dir=saved_nodes_dir, TreeEnv=self.mimic_env, action_id=action_id)
+        return_value_log_all = []
+        return_value_log_struct_all = []
+        return_value_var_reduction_all = []
+        mae_all = []
+        rmse_all = []
+        leaves_number_all = []
+        for node_index in range(0, len(moved_nodes)):
+            return_value_log, return_value_log_struct, return_value_var_reduction, mae, rmse, leaves_number = \
+                self.generate_prediction_results(init_state, init_var_list, moved_nodes,
+                                                 node_index, log_file=None, visualize_flag=False)
+            return_value_log_all.append(return_value_log)
+            return_value_log_struct_all.append(return_value_log_struct)
+            return_value_var_reduction_all.append(return_value_var_reduction)
+            mae_all.append(mae)
+            rmse_all.append(rmse)
+            leaves_number_all.append(leaves_number)
+        return return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
+               mae_all, rmse_all, leaves_number_all
+
+    def generate_prediction_results(self, init_state, init_var_list, moved_nodes, max_node, log_file, visualize_flag):
         parent_state = init_state
-        parent_var_list = init_var_list
         state = init_state
-        moved_nodes = moved_nodes
-        for moved_node in moved_nodes:
+        parent_var_list = init_var_list
+        root_binary = BinaryTreeNode(state=init_state[0], level=0, prediction=moved_nodes[0].state_prediction[0])
+        binary_node_index = [root_binary]
+
+        for moved_node in moved_nodes[:max_node]:
             selected_action = moved_node.action
             if selected_action is not None:
                 state, new_var_list = self.mimic_env.next_state(state=parent_state, action=selected_action,
                                                                 parent_var_list = parent_var_list)
-                if visualize_flag:
-                    decoder = self.dientangler.VAE.decode
-                    device = self.dientangler.device
-                    z_dim = int(self.mimic_env.n_action_types)
-                    data_all = self.mimic_env.data_all
-                    visualize_split(selected_action, state, data_all, decoder, device, z_dim, level)
+                split_index = int(selected_action.split('_')[0])
+                split_binary_node = binary_node_index[split_index]
                 parent_state = state
                 parent_var_list = new_var_list
-            level += 1
+                split_binary_node.action = selected_action
+                split_binary_node.left_child = BinaryTreeNode(state=state[split_index],
+                                                              level=split_binary_node.level+1,
+                                                              prediction = moved_node.state_prediction[split_index])
+                split_binary_node.right_child = BinaryTreeNode(state=state[split_index+1],
+                                                               level=split_binary_node.level+1,
+                                                               prediction = moved_node.state_prediction[split_index+1])
+                binary_node_index.pop(split_index)
+                binary_node_index.insert(split_index, split_binary_node.left_child)
+                binary_node_index.insert(split_index+1, split_binary_node.right_child)
 
-        predictions = [None for i in range(len(data))]
-        assert len(state) == len(moved_nodes[-1].state_prediction)
-        for subset_index in range(len(state)):
-            subset = state[subset_index]
-            for data_index in subset:
-                predictions[data_index] = moved_nodes[-1].state_prediction[subset_index]
+        binary_states = []
+        binary_predictions = [None for i in range(len(self.mimic_env.data_all))]
 
-            # TODO: validate the prediction, please comment it out after evaluation
-            subset_deltas = []
-            for data_index in subset:
-                subset_deltas.append(data[data_index][-1])
-            subset_delta_avg = sum(subset_deltas) / len(subset_deltas)
+        if  visualize_flag:
+            self.iterative_read_binary_tree(root_binary, log_file, visualize_flag=visualize_flag)
+        selected_binary_node_index = binary_node_index
 
-            assert moved_nodes[-1].state_prediction[subset_index] == subset_delta_avg
+        # state_predictions = []
+        # for binary_node in selected_binary_node_index:
+        #     state_target_values = []
+        #     for data_index in binary_node.state:
+        #         state_target_values.append(data[data_index][-1])
+        #     state_predictions.append(sum(state_target_values) / len(state_target_values))
 
-        return predictions
+        for binary_node in selected_binary_node_index:
+            binary_states.append(binary_node.state)
+            for data_index in binary_node.state:
+                binary_predictions[data_index] = binary_node.prediction
 
+        return_value_log = self.mimic_env.get_return(state=binary_states)
+        return_value_log_struct = self.mimic_env.get_return(state=binary_states, apply_structure_cost=True)
+        return_value_var_reduction = self.mimic_env.get_return(state=binary_states, apply_variance_reduction=True)
 
+        # predictions = [None for i in range(len(data))]
+        # assert len(state) == len(moved_nodes[-1].state_prediction)
+        # for subset_index in range(len(state)):
+        #     subset = state[subset_index]
+        #     for data_index in subset:
+        #         predictions[data_index] = moved_nodes[-1].state_prediction[subset_index]
+        #
+        # for predict_index in range(len(predictions)):
+        #     pred_diff = binary_predictions[predict_index] - predictions[predict_index]
+        #     print(pred_diff)
 
+        ae_all = []
+        se_all = []
+        for data_index in range(len(binary_predictions)):
+            if binary_predictions[data_index] is not None:
+                real_value = self.mimic_env.data_all[data_index][-1]
+                predicted_value = binary_predictions[data_index]
+                ae = abs(real_value-predicted_value)
+                ae_all.append(ae)
+                mse = ae**2
+                se_all.append(mse)
+        mae = np.mean(ae_all)
+        mse = np.mean(se_all)
+        rmse = (mse)**0.5
+        leaves_number = len(state)
+        return return_value_log, return_value_log_struct, return_value_var_reduction, mae, rmse, leaves_number
 
-    def test_mimic_model(self, action_id, log_file):
-        self.iteration_number = int(self.episodic_sample_number * 4.5)
+    def test_mimic_model(self, action_id, log_file, data_type):
+        self.iteration_number = int(self.episodic_sample_number * 45) # the last 5k(/50k) is for testing
 
         if self.method == 'mcts':
-            self.data_loader(episode_number=5, target="latent")  # divided into training, validation and testing
-            saved_nodes_dir = "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/MCTS/flappybird/" \
-                        "saved_nodes_2020-04-15/".format(action_id)
-            self.predict(self.memory, action_id, saved_nodes_dir)
+            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
+            saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number \
+                 = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=False)
+            # return_value, mae, rmse, leaves_number = [None, None, None, None]
         elif self.method == 'cart-fvae':
-            self.data_loader(episode_number=5, target="latent")  # divided into training, validation and testing
+            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             testing_data = [[], []]
@@ -190,9 +348,18 @@ class MimicLearner():
                 testing_data[0].append(data_input)
                 testing_data[1].append(data_output)
             testing_data[0] = np.stack(testing_data[0], axis=0)
-            self.mimic_model.test_mimic(testing_data=testing_data, mimic_env=self.mimic_env)
+            save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
+                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                                                                 self.method,
+                                                                                                 action_id)
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number \
+                 = self.mimic_model.test_mimic(testing_data=testing_data,
+                                               save_model_dir=save_model_dir,
+                                               mimic_env=self.mimic_env,
+                                               log_file=log_file)
         elif self.method == 'cart':
-            self.data_loader(episode_number=5, target="raw")
+            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             testing_data = [[], []]
@@ -202,85 +369,204 @@ class MimicLearner():
                 testing_data[0].append(data_input)
                 testing_data[1].append(data_output)
             testing_data[0] = np.stack(testing_data[0], axis=0)
-            self.mimic_model.test_mimic(testing_data=testing_data, mimic_env=self.mimic_env)
-        elif self.method == 'm5-rt':
-            self.data_loader(episode_number=5, target="raw")
+            save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
+                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                                                                 self.method,
+                                                                                                 action_id)
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number \
+                 =  self.mimic_model.test_mimic(testing_data=testing_data,
+                                                save_model_dir=save_model_dir,
+                                                mimic_env=self.mimic_env,
+                                                log_file=log_file)
+        elif self.method == 'm5-rt' or self.method == 'm5-mt':
+            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-            data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-tree-testing.csv'
+            data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-aid{0}-tree-testing.csv'.format(action_id)
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/M5/' \
-                                                           '{0}/m5-rt-weka.model'.format(self.game_name)
+                                                           '{0}/{1}-aid{2}-weka.model'.format(self.game_name,
+                                                                                              self.method,
+                                                                                              action_id)
             if not os.path.exists(data_dir):
                 generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
-            self.mimic_model.test_weka_model(testing_data_dir=data_dir, save_model_dir=save_model_dir,
-                                             log_file=log_file, mimic_env=self.mimic_env)
+            return_value, mae, rmse, leaves_number = self.mimic_model.test_weka_model(testing_data_dir=data_dir,
+                                                                                     save_model_dir=save_model_dir,
+                                                                                     log_file=log_file,
+                                                                                     mimic_env=self.mimic_env)
+        else:
+            raise ValueError('Unknown method {0}'.format(self.method))
 
-    def train_mimic_model(self, action_id, shell_round_number, log_file):
-        mcts_file_name = None
-        # for episode_number in range(1, 100):
-        if self.action_type == 'discrete':
-            # for action_id in range(self.action_number):
-            # print('\nCurrent action is {0}'.format(action_id))
 
-            if self.method == 'mcts':
-                self.data_loader(episode_number=4, target="latent")
-                self.mimic_env.assign_data(self.memory)
-                init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+        results_str = "Testing action {0}: return_value_log:{1}, " \
+                      "return_value_log_struct: {2}, return_value_var_reduction {3}," \
+                      "mae:{4}, rmse:{5}, leaves:{6}".format(action_id,
+                                                             str(return_value_log)+"({0})".format(
+                                                                 float(return_value_log)/leaves_number),
+                                                             str(return_value_log_struct) + "({0})".format(
+                                                                 float(return_value_log_struct) / leaves_number),
+                                                             str(return_value_var_reduction) + "({0})".format(
+                                                                 float(return_value_var_reduction) / leaves_number),
+                                                             str(mae) + "({0})".format(float(mae) / leaves_number),
+                                                             str(rmse) + "({0})".format(float(rmse) / leaves_number),
+                                                             leaves_number)
+
+        print(results_str, file=log_file)
+        return return_value_log, return_value_log_struct, \
+               return_value_var_reduction, mae, rmse, leaves_number, results_str
+
+
+    def get_MCTS_nodes_dir(self, action_id):
+
+        if self.game_name == 'flappybird' and action_id == 0:
+            if self.saved_model_c_puct == 0.01:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_2020-04-30/".format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 1:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_2020-07-01/".format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0.05:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_2020-07-10/".format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0.02:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  'saved_nodes_action{1}_CPUCT0_02_2020-07-13/'.format(self.game_name, action_id)
+            else:
+                raise ValueError("Unknown save model")
+        elif self.game_name == 'flappybird' and action_id == 1:
+            if self.saved_model_c_puct == 0.01:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_2020-06-09/".format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 1.5:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_2020-06-24/".format(self.game_name, action_id)
+            else:
+                raise ValueError("Unknown save model")
+        else:
+            raise ValueError('Unknown MCTS dir')
+
+        return saved_nodes_dir
+
+    def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type, run_mcts=False):
+        # mcts_file_name = None
+        return_value_log = None
+        if self.method == 'mcts':
+            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.mimic_env.assign_data(self.memory)
+            init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+            if run_mcts:
+                mcts_saved_dir = self.global_model_data_path + self.mcts_saved_dir
+                shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved_action{0}_{1}.pkl'.format(action_id, launch_time)
                 execute_episode_single(num_simulations=self.num_simulations,
                                        TreeEnv=self.mimic_env,
                                        tree_writer=None,
-                                       mcts_saved_dir=self.global_model_data_path + self.mcts_saved_dir,
+                                       mcts_saved_dir=mcts_saved_dir,
                                        max_k=self.max_k,
                                        init_state=init_state,
                                        init_var_list=init_var_list,
                                        action_id=action_id,
                                        ignored_dim=self.ignored_dim,
                                        shell_round_number= shell_round_number,
+                                       shell_saved_model_dir = shell_saved_model_dir,
                                        log_file = log_file,
                                        apply_split_parallel=True)
-            elif self.method == 'cart-fvae':
-                self.data_loader(episode_number=4, target="latent")
-                self.mimic_env.assign_data(self.memory)
-                init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-                training_data = [[],[]]
-                for data_index in init_state[0]:
-                    data_input = np.concatenate([self.memory[data_index][0]],axis=0)
-                    data_output = self.memory[data_index][4]
-                    training_data[0].append(data_input)
-                    training_data[1].append(data_output)
-                # cart.train_2d_tree()
-                self.mimic_model.train_mimic(training_data=training_data, mimic_env = self.mimic_env)
-            elif self.method == 'cart':
-                self.data_loader(episode_number=4, target="raw")
-                self.mimic_env.assign_data(self.memory)
-                init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-                training_data = [[], []]
-                for data_index in init_state[0]:
-                    data_input = self.memory[data_index][0]
-                    data_output = self.memory[data_index][4]
-                    training_data[0].append(data_input)
-                    training_data[1].append(data_output)
-                training_data[0] = np.stack(training_data[0], axis=0)
-                # cart.train_2d_tree()
-                self.mimic_model.train_mimic(training_data=training_data, mimic_env = self.mimic_env)
-                pass
-            elif self.method == 'm5-rt':
-                self.data_loader(episode_number=4, target="raw")
-                self.mimic_env.assign_data(self.memory)
-                init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-                data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-tree-training.csv'
-                save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/M5/' \
-                                                               '{0}/m5-rt-weka.model'.format(self.game_name)
-                if not os.path.exists(data_dir):
-                    generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
-                self.mimic_model.train_weka_model(training_data_dir=data_dir, save_model_dir=save_model_dir,
-                                                    log_file=log_file, mimic_env=self.mimic_env)
-
-            elif self.method == 'm5-mt':
-                pass
+                return_value, mae, rmse, leaves_number = [None, None, None, None]
             else:
-                raise ValueError('Unknown method {0}'.format(self.method))
+                saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
+                return_value_log, return_value_log_struct, \
+                return_value_var_reduction, mae, rmse, leaves_number \
+                    = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=True)
+        elif self.method == 'cart-fvae':
+            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.mimic_env.assign_data(self.memory)
+            init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+            training_data = [[],[]]
+            for data_index in init_state[0]:
+                data_input = np.concatenate([self.memory[data_index][0]],axis=0)
+                data_output = self.memory[data_index][4]
+                training_data[0].append(data_input)
+                training_data[1].append(data_output)
+            save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
+                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                                                                 self.method,
+                                                                                                 action_id)
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number \
+                = self.mimic_model.train_mimic(training_data=training_data,
+                                               save_model_dir=save_model_dir,
+                                               mimic_env = self.mimic_env,
+                                               log_file=log_file)
+        elif self.method == 'cart':
+            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.mimic_env.assign_data(self.memory)
+            init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+            training_data = [[], []]
+            for data_index in init_state[0]:
+                data_input = self.memory[data_index][0]
+                data_output = self.memory[data_index][4]
+                training_data[0].append(data_input)
+                training_data[1].append(data_output)
+            training_data[0] = np.stack(training_data[0], axis=0)
+            # cart.train_2d_tree()
+            save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
+                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                                                                 self.method,
+                                                                                                 action_id)
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number \
+                = self.mimic_model.train_mimic(training_data=training_data,
+                                               save_model_dir=save_model_dir,
+                                               mimic_env = self.mimic_env,
+                                               log_file=log_file)
 
+        elif self.method == 'm5-rt' or self.method == 'm5-mt':
+            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.mimic_env.assign_data(self.memory)
+            init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
+            data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-aid{0}-tree-training.csv'.format(action_id)
+            save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/M5/' \
+                                                           '{0}/{1}-aid{2}-weka.model'.format(self.game_name,
+                                                                                              self.method,
+                                                                                              action_id)
+            if not os.path.exists(data_dir):
+                generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
+            return_value, mae, rmse, leaves_number = self.mimic_model.train_weka_model(training_data_dir=data_dir,
+                                                                                      save_model_dir=save_model_dir,
+                                                                                      log_file=log_file,
+                                                                                      mimic_env=self.mimic_env)
 
-        # return mcts_file_name
+        else:
+            raise ValueError('Unknown method {0}'.format(self.method))
+        if return_value_log is not None:
+            results_str = "Training action {0}: return_value_log:{1}, " \
+                          "return_value_log_struct: {2}, return_value_var_reduction {3}," \
+                          "mae:{4}, rmse:{5}, leaves:{6}".format(action_id,
+                                                                 str(return_value_log)+"({0})".format(
+                                                                     float(return_value_log)/leaves_number),
+                                                                 str(return_value_log_struct) + "({0})".format(
+                                                                     float(return_value_log_struct) / leaves_number),
+                                                                 str(return_value_var_reduction) + "({0})".format(
+                                                                     float(return_value_var_reduction) / leaves_number),
+                                                                 str(mae) + "({0})".format(float(mae) / leaves_number),
+                                                                 str(rmse) + "({0})".format(float(rmse) / leaves_number),
+                                                                 leaves_number)
+
+            print(results_str, file=log_file)
+            return return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number, results_str
+
+class BinaryTreeNode():
+    def __init__(self, state, level, prediction):
+        self.state = state
+        self.left_child = None
+        self.right_child = None
+        self.action = None
+        self.level = level
+        self.prediction = prediction
 

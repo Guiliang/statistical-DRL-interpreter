@@ -1,6 +1,6 @@
 DRL:
   Learn:
-    actions: 4  # number of valid actions
+    actions: 6  # 1: shot, 2: move right, 3: move left, 4: move right shot 5: move left shot
     gamma: 0.99  # decay rate of past observations
     observe: 100 #10000.  # timesteps to observe before training
     explore: 2000000.  # frames over which to anneal epsilon
@@ -68,9 +68,9 @@ DEG:
 Mimic:
   Learn:
     cuda : True
-    num_simulations: 100001
+    num_simulations: 10000001
     replay_memory_size: 10000
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/SpaceInvaders-v0/saved_model'
     max_k: 10
-    ignore_dim: '[0, 2, 8, 9, 10, 12, 18, 19]'
+    ignore_dim: None

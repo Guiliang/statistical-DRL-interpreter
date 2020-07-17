@@ -16,8 +16,7 @@ from tensorpack.utils.stats import StatCounter
 
 def play_one_episode(env, func, render=False):
 
-    actions = np.asarray([[a] * 200 for a in range(9, 10)])
-    actions = np.asarray([[a] * 200 for a in range(1, 10)])
+    actions = np.asarray([[a] * 200 for a in range(1, 6)])
     actions = actions.flatten()
 
     def predict(s):
@@ -37,7 +36,7 @@ def play_one_episode(env, func, render=False):
     iteration = 0
     while True:
         act = predict(ob)
-        # act = actions[iteration]
+        act = actions[iteration]
         print(act)
         ob, r, isOver, info = env.step(act)
 

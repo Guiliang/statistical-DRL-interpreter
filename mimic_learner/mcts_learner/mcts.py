@@ -20,12 +20,12 @@ import sys
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.01
+c_PUCT = 0.02
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
 SPLIT_POOL = None
-PROCESS_NUMBER = 6
+PROCESS_NUMBER = None
 
 
 class DummyNode:
@@ -345,7 +345,7 @@ class MCTSNode:
                 split_value = round(split_values[split_index].item(), 6)
             else:
                 split_value = round(float(split_values[int(split_index * split_gap)]), 6)
-            std_weighted_sum = float(0)
+            var_weighted_sum = float(0)
 
             split_subset_1 = []
             split_subset_delta_1 = []
@@ -376,7 +376,7 @@ class MCTSNode:
                 action = check_split_state_pair.get(new_state_list)
                 if action_new != action:
                     # prevent the duplicated split (different split methods but have the same state)
-                    std_weighted_sum = float('inf')
+                    var_weighted_sum = float('inf')
                 else:
                     skip_flag = True
             else:
@@ -384,34 +384,52 @@ class MCTSNode:
                 check_split_state_pair_new.update({new_state_list: action_new})
 
             if len(split_subset_1) == 0 or len(split_subset_2) == 0:
-                std_weighted_sum = float('inf')  # prevent the empty set
+                var_weighted_sum = float('inf')  # prevent the empty set
 
-            if add_estimate and std_weighted_sum != float('inf') and not skip_flag:
+            if add_estimate and var_weighted_sum != float('inf') and not skip_flag:
                 if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
                     # mu1, std1 = norm.fit(split_subset_delta_1)
                     var1 = np.var(split_subset_delta_1)
-                    std_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * var1
+                    var_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * var1
+                    # if var1 > 1e-6:
+                    #     log_var1 = math.log(var1)
+                    # else:
+                    #     log_var1 = math.log(1e-6)
+                    # std_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * log_var1
                 if len(split_subset_delta_2) > 0:
                     # mu2, std2 = norm.fit(split_subset_delta_2)
                     var2 = np.var(split_subset_delta_2)
-                    std_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * var2
+                    var_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * var2
+                    # if var2 > 1e-6:
+                    #     log_var2 = math.log(var2)
+                    # else:
+                    #     log_var2 = math.log(1e-6)
+                    # std_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * log_var2
 
                 if not apply_global_variance:
-                    weight_std_reduction = len(state_subset) / total_length * var_list[
-                        subset_index] - std_weighted_sum
+                    weight_var_reduction = len(state_subset) / total_length * var_list[
+                        subset_index] - var_weighted_sum
+                    weight_log_var = math.log(var_weighted_sum)
                 else:
-
                     for var_index in range(len(var_list)):
                         if var_index != subset_index:
-                            std_weighted_sum += float(len(state[var_index])) / total_length * \
-                                                var_list[var_index]
-                    weight_std_reduction = original_var - std_weighted_sum
+                            var_add = var_list[var_index]
+                            if var_add < 1e-6:
+                                var_add = 1e-6
+                            var_weighted_sum += (float(len(state[var_index])) / total_length) * var_add
+                            # var_weighted_sum += float(len(state[var_index])) / total_length * math.log(var_add)
+
+                    weight_var_reduction = original_var - var_weighted_sum
+                    weight_log_var = math.log(var_weighted_sum)
             else:
-                weight_std_reduction = -std_weighted_sum
+                weight_var_reduction = original_var - var_weighted_sum
+                weight_log_var = var_weighted_sum
             if not skip_flag:
                 child_N_subset_dim[split_value] = 0
-                child_W_subset_dim[split_value] = weight_std_reduction
-                split_value_weight_list.append([split_value, weight_std_reduction, skip_flag])
+                child_W_subset_dim[split_value] = weight_var_reduction
+                split_value_weight_list.append([split_value, weight_var_reduction, skip_flag])
+                # child_W_subset_dim[split_value] = weight_std_reduction
+                # split_value_weight_list.append([split_value, weight_std_reduction, skip_flag])
 
 
         return child_N_subset_dim, child_W_subset_dim, check_split_state_pair, check_split_state_pair_new, split_value_weight_list
@@ -419,7 +437,7 @@ class MCTSNode:
 
 
     def select_expand_action(self, dim_per_split, reference_data, original_var, add_estimate=False,
-                             apply_global_variance=False):
+                             apply_global_variance=False, max_expand_state=10):
         """
         explore the possible split for each node and add greedy estimate (like the normal decision tree)
         :param dim_per_split: the number of split testes for each latent dimension
@@ -436,7 +454,14 @@ class MCTSNode:
         for data_sub_line in reference_data:
             delta_data_all.append(data_sub_line[-1])
 
+        state_lengths = []
+        for subset in self.state:
+            state_lengths.append(len(subset))
+        expand_state_indices = np.asarray(state_lengths).argsort()[-max_expand_state:][::-1]
+
         for subset_index in range(len(self.state)):
+            if subset_index not in expand_state_indices:
+                continue
             subset = self.state[subset_index]
             subset_data = None
             for data_index in subset:
@@ -729,7 +754,7 @@ class MCTSNode:
     #     return probs / np.sum(probs)
 
     def print_tree(self, TreeEnv, writer=None, print_indent=0):
-        return_value = TreeEnv.get_return(self.state, self.depth)
+        return_value = TreeEnv.get_return(self.state, self.depth, is_training=True)
         # node_string = "\033[94m|" + "----" * level
         node_string = "----" * print_indent
         # node_string += "Node: action={0}, N={1}, Q={2}, " \
@@ -755,7 +780,7 @@ class MCTSNode:
             child_actions.append(action)
             child_visit_number.append(float(child.N))
 
-        return_value = TreeEnv.get_return(self.state, self.depth)
+        return_value = TreeEnv.get_return(self.state, self.depth, is_training=True)
         node_string = "----" * level
         node_string += "|Node: action={0}, N={1}, " \
                        "Q={2}, U={3}, return={4}|".format(self.action, self.N,
@@ -884,25 +909,37 @@ class MCTS:
         self.moved_node_str_dict_all = {}
         self.moved_node_child_dict_all = {}
 
-    def tree_search(self, k, original_var, avg_timer_record, TreeEnv, log_file, process, pid):
+    def tree_search(self, k, original_var, avg_timer_record, TreeEnv, log_file, process, pid, apply_rollout=False):
         print('\nCPUCT is {0}, pid is {1} and k is {2}\n'.format(c_PUCT, pid, k), file=log_file)
         # if num_parallel is None:
         self.TreeEnv = TreeEnv
         num_parallel = self.simulations_per_round
         leaves = []
         np.random.seed(self.random_seed)
+        print_gap = 100
+        select_time_t0 = time.time()
         while len(leaves) < num_parallel:
-            if len(leaves) % 100 == 0:
+            if len(leaves) % print_gap == 0:
+                avg_select_time = (time.time()-select_time_t0)/print_gap if len(leaves)>0 else 0
+                select_time_t0 = time.time()
                 mme = float(process.memory_info().rss) / 1000000
-                print("Working on simulations {0} currently using memory {1}".format(str(len(leaves)), str(mme)) ,file=log_file)
-                log_file.flush()
+                print("Working on simulations {0} currently "
+                      "using memory {1} with avg time {2}".format(
+                    str(len(leaves)), str(mme), str(avg_select_time)) ,file=log_file)
+                if log_file is not None:
+                    log_file.flush()
+
             # print("_"*50)
             leaf, avg_timer_record = self.root.select_leaf(k=k, TreeEnv=TreeEnv,
                                                            original_var=original_var,
                                                            avg_timer_record=avg_timer_record)
             # mme = process.memory_info().rss
             # print("Search {0} using total memory {1}".format(str(len(leaves)), str(mme)), file=log_file)
-            value = self.TreeEnv.get_return(leaf.state, leaf.depth)
+
+            if apply_rollout:
+                value = self.TreeEnv.regression_tree_rollout(leaf.state)
+            else:
+                value = self.TreeEnv.get_return(leaf.state, leaf.depth, is_training=True)
             # mme = process.memory_info().rss
             # print("Return {0} using total memory {1}".format(str(len(leaves)), str(mme)), file=log_file)
             start_time = time.time()
@@ -992,9 +1029,9 @@ class MCTS:
 
         # generate prediction value
         state_prediction = []
-        for state in root.state:
+        for subset in root.state:
             state_target_values = []
-            for data_index in state:
+            for data_index in subset:
                 state_target_values.append(float(self.TreeEnv.data_all[data_index][-1]))
             state_prediction.append(sum(state_target_values)/len(state_target_values))
         self.root.state_prediction=state_prediction
@@ -1019,15 +1056,21 @@ class MCTS:
         # mme_b = process.memory_info().rss
         # del root.child_N
         # del root.child_W
+        save_node = MCTSNode(state=root.state, n_actions_types=root.n_actions_types, var_list=root.var_list,
+                             random_seed=root.random_seed, action=root.action, parent=None, level=root.level,
+                             ignored_dim=root.ignored_dim)
+        save_node.state_prediction = state_prediction
+        save_node.child_N = root.child_N
         print("The children of root is {0}".format(root.children), file=log_file)
         with open(saved_nodes_dir+'/node_counter_{0}_{1}.pkl'
                 .format(round_counter, datetime.today().strftime('%Y-%m-%d-%H')), 'wb') as f:
-            pickle.dump(obj=root, file=f)
+            pickle.dump(obj=save_node, file=f)
+        del save_node
 
         mme_a = float(process.memory_info().rss) / 1000000
         print("Deep copy total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
 
-        return_value = self.TreeEnv.get_return(self.root.state, self.root.depth)
+        return_value = self.TreeEnv.get_return(self.root.state, self.root.depth, is_training=True)
         self.rewards.append(return_value)
         print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
               "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
@@ -1228,13 +1271,15 @@ def test_mcts(saved_nodes_dir, TreeEnv, action_id):
                     mcts_node = pickle.load(f)
                     mcts_node.states = []
                     del mcts_node.split_var_index_dict
+                    del mcts_node.children_state_pair
                     del mcts_node.children
                     del mcts_node.child_N
                     del mcts_node.child_W
+                    del mcts_node.parent
                     testing_moved_nodes.append(mcts_node)
                 break
 
-    # TODO: add me if you want the final a binary tree
+    # TODO: do you need to record the parent node?
     # print('\n The final binary tree is:')
     # mother_str = ','.join(list(map(str, mcts_read.moved_nodes[0].state[0])))
     # PBT = PrintBinaryTree(mcts_read.moved_node_str_dict_all, mcts_read.moved_node_child_dict_all)
@@ -1248,21 +1293,25 @@ def test_mcts(saved_nodes_dir, TreeEnv, action_id):
 def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                            mcts_saved_dir, max_k, init_state,
                            init_var_list, action_id, ignored_dim,
-                           shell_round_number, log_file,
+                           shell_round_number, shell_saved_model_dir, log_file,
                            apply_split_parallel=False, save_gap=2):
     pid = os.getpid()
     process = psutil.Process(pid)  # supervise the usage of memory
 
     next_end_flag = False
-    simulations_per_round = 1000 # 2000
+    simulations_per_round = 1000 # 1000
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER
+        PROCESS_NUMBER = 10-len(ignored_dim)
         SPLIT_POOL = mp.Pool(processes=PROCESS_NUMBER)
+    print('Process number is {0}'.format(PROCESS_NUMBER), file=log_file)
     tracemalloc.start()
     avg_timer_record = {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
     k = 5
     global c_PUCT
+    initial_c_puct = str(c_PUCT).replace('.', '_')
+
     c_puct_step_size = float(c_PUCT)/ (num_simulations / simulations_per_round)
 
     if shell_round_number is None:  # running in linux shell
@@ -1277,11 +1326,11 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         current_simulations = 0
         saved_nodes_dir = None
     else:
-        shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved.pkl'
+        # shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved.pkl'
         round_counter = shell_round_number*save_gap
         k = k + shell_round_number*save_gap
         k = k if k < max_k else max_k
-        c_PUCT -= c_puct_step_size*(shell_round_number*save_gap-1)
+        c_PUCT -= c_puct_step_size*(shell_round_number*save_gap)
         # pbar.update(simulations_per_round*round_counter)
         if round_counter > 0:
             with open(shell_saved_model_dir, 'rb') as f:
@@ -1292,8 +1341,8 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
             mcts = MCTS(None, tree_save_dir=mcts_saved_dir, simulations_per_round=simulations_per_round)
             mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
                                    n_action_types=TreeEnv.n_action_types, ignored_dim=ignored_dim)
-            saved_nodes_dir = mcts_saved_dir.replace('saved_model','saved_nodes')+'_action'+str(action_id)+'_'\
-                              +datetime.today().strftime('%Y-%m-%d')
+            saved_nodes_dir = mcts_saved_dir.replace('saved_model','saved_nodes')+'_action'+str(action_id)+'_CPUCT'\
+                              +str(initial_c_puct)+'_'+datetime.today().strftime('%Y-%m-%d')
             mcts.saved_nodes_dir=saved_nodes_dir
             if not os.path.exists(saved_nodes_dir):
                 os.mkdir(saved_nodes_dir)
@@ -1301,7 +1350,8 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         current_simulations = simulations_per_round * round_counter
 
         print('launch mcts for round {0}\n'.format(round_counter), file = log_file)
-        log_file.flush()
+        if log_file is not None:
+            log_file.flush()
 
     # pre_simulations = mcts.root.N  # dummy node records the total simulation number
     # counter_pre_simulations = 0
@@ -1315,8 +1365,8 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                     print("Avg Time of {0} is {1}".
                           format(timer_key, float(avg_timer_record[timer_key][1]) / avg_timer_record[timer_key][0]),
                           file=log_file)
-                mcts_file_name = mcts.save_mcts(current_simulations=current_simulations,
-                                                mode='single', action_id=action_id)
+                # mcts_file_name = mcts.save_mcts(current_simulations=current_simulations,
+                #                                 mode='single', action_id=action_id)
 
             if shell_round_number is not None and next_end_flag:
                 with open(shell_saved_model_dir, 'wb') as f:
@@ -1344,9 +1394,11 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         # snapshot = tracemalloc.take_snapshot()
         # display_top(snapshot)
         mcts.root.print_tree(TreeEnv, writer=log_file)
-        log_file.flush()
+        if log_file is not None:
+            log_file.flush()
         mcts.take_move(TreeEnv, log_file, process, round_counter, saved_nodes_dir)
-        log_file.flush()
+        if log_file is not None:
+            log_file.flush()
 
 
 

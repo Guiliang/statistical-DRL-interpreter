@@ -178,7 +178,7 @@ class DRLDataGenerator():
             env = LimitLength(env, 60000)
         return env
 
-    def test_model_and_generate_data(self, test_size=10000):
+    def test_model_and_generate_data(self, test_size=50000):
         if self.game_name == "flappybird":
             with open(self.data_save_path+'action_values.txt', 'w')as action_values_file:
                 action_index = 0

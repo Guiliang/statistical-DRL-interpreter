@@ -1,9 +1,24 @@
 from sklearn.tree.tree import DecisionTreeRegressor
 import numpy as np
 import pickle
-from utils.general_utils import compute_regression_results
-from utils.plot_utils import plot_decision_boundary
 
+from data_reader_tmp import data_loader
+from mimic_learner.mcts_learner.mimic_env import MimicEnv
+
+
+def compute_regression_results(predictions, labels):
+    ae_sum = []
+    se_sum = []
+
+    length = len(predictions)
+    for index in range(0, length):
+        ae_sum.append(abs(predictions[index] - labels[index]))
+        se_sum.append((predictions[index] - labels[index]) ** 2)
+
+    mae = float(sum(ae_sum)) / length
+    rmse = (float(sum(se_sum)) / length) ** 0.5
+
+    return mae, rmse
 
 class CARTRegressionTree():
     def __init__(self, model_name, options=[]):
@@ -11,13 +26,11 @@ class CARTRegressionTree():
         self.max_leaf_nodes = options[1]
         self.criterion = options[3]
         self.mode = options[4]
-        self.min_samples_leaf = options[6]
 
     def train_mimic(self, training_data, mimic_env, save_model_dir, log_file):
         self.model = DecisionTreeRegressor(max_leaf_nodes=self.max_leaf_nodes,
                                            criterion= self.criterion,
-                                           splitter=self.mode,
-                                           min_samples_leaf=self.min_samples_leaf)
+                                           splitter=self.mode)
         self.model.fit(training_data[0], training_data[1])
         # self.print_tree()
         leaves_number = (self.model.tree_.node_count+1)/2
@@ -68,56 +81,48 @@ class CARTRegressionTree():
         return return_value_log, return_value_log_struct, \
                return_value_var_reduction, mae, rmse, leaves_number
 
-    def train_2d_tree(self, training_data, selected_dim = (4, 6)):
+options_dict = { 'flappybird': ['max_leaf_nodes', 50, 'criterion', 'mae', 'best'],}
+game_name = 'flappybird'
+method = 'cart'
+mimic_model = CARTRegressionTree(model_name=method, options=options_dict[game_name])
+action_id = 0
 
-        training_data = np.stack([np.asarray(training_data[0])[:, selected_dim[0]],
-                                        np.asarray(training_data[0])[:, selected_dim[1]]], axis=1)
-        data_number = 150
-        self.model.fit(training_data[:data_number], training_data[1][:data_number])
-        plot_decision_boundary(input_data=training_data[:data_number],
-                               target_data = training_data[1][:data_number], tree_model=self.model)
+memory = data_loader(episode_number=4, action_id=action_id, iteration_number=0)
+mimic_env = MimicEnv()
+mimic_env.assign_data(memory)
+init_state, init_var_list = mimic_env.initial_state(action=action_id)
+training_data = [[], []]
+for data_index in init_state[0]:
+    data_input = np.concatenate([memory[data_index][0]], axis=0)
+    data_output = memory[data_index][4]
+    training_data[0].append(data_input)
+    training_data[1].append(data_output)
+save_model_dir = 'cs/oschulte/DRL-interpreter-model/comparison/cart/' \
+                                               '{0}/{1}-aid{2}-sklearn.model'.format(game_name,
+                                                                                     method,
+                                                                                     action_id)
+return_value_log, return_value_log_struct, \
+return_value_var_reduction, mae, rmse, leaves_number \
+    = mimic_model.train_mimic(training_data=training_data,
+                                   save_model_dir=save_model_dir,
+                                   mimic_env=mimic_env,
+                                   log_file=None)
 
-    def __del__(self):
-        pass
+iteration_number = 1000 * 45
+memory = data_loader(episode_number=45.5, action_id=action_id, iteration_number=iteration_number)
+mimic_env.assign_data(memory)
+init_state, init_var_list = mimic_env.initial_state(action=action_id)
+testing_data = [[], []]
+for data_index in init_state[0]:
+    data_input = memory[data_index][0]
+    data_output = memory[data_index][4]
+    testing_data[0].append(data_input)
+    testing_data[1].append(data_output)
+testing_data[0] = np.stack(testing_data[0], axis=0)
 
-    def print_tree(self):
-        n_nodes = self.model.tree_.node_count
-        children_left = self.model.tree_.children_left
-        children_right = self.model.tree_.children_right
-        feature = self.model.tree_.feature
-        threshold = self.model.tree_.threshold
-
-        # The tree structure can be traversed to compute various properties such
-        # as the depth of each node and whether or not it is a leaf.
-        node_depth = np.zeros(shape=n_nodes, dtype=np.int64)
-        is_leaves = np.zeros(shape=n_nodes, dtype=bool)
-        stack = [(0, -1)]  # seed is the root node id and its parent depth
-        while len(stack) > 0:
-            node_id, parent_depth = stack.pop()
-            node_depth[node_id] = parent_depth + 1
-
-            # If we have a test node
-            if (children_left[node_id] != children_right[node_id]):
-                stack.append((children_left[node_id], parent_depth + 1))
-                stack.append((children_right[node_id], parent_depth + 1))
-            else:
-                is_leaves[node_id] = True
-
-        print("The binary tree structure has %s nodes and has "
-              "the following tree structure:"
-              % n_nodes)
-        for i in range(n_nodes):
-            if is_leaves[i]:
-                print("%snode=%s leaf node." % (node_depth[i] * "\t", i))
-            else:
-                print("%snode=%s test node: go to node %s if X[:, %s] <= %s else to "
-                      "node %s."
-                      % (node_depth[i] * "\t",
-                         i,
-                         children_left[i],
-                         feature[i],
-                         threshold[i],
-                         children_right[i],
-                         ))
-
-
+return_value_log, return_value_log_struct, \
+return_value_var_reduction, mae, rmse, leaves_number \
+    = mimic_model.test_mimic(testing_data=testing_data,
+                                   save_model_dir=save_model_dir,
+                                   mimic_env=mimic_env,
+                                   log_file=None)
