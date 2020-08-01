@@ -45,17 +45,22 @@ class M5Tree():
 
         evaluation = Evaluation(training_data)
         predicts = evaluation.test_model(self.classifier, training_data)
-        return_value = None
-        if mimic_env is not None:
-            predict_dictionary = {}
-            for predict_index in range(len(predicts)):
-                predict_value = predicts[predict_index]
-                if predict_value in predict_dictionary.keys():
-                    predict_dictionary[predict_value].append(predict_index)
-                else:
-                    predict_dictionary.update({predict_value:[predict_index]})
+        # return_value = None
+        # if mimic_env is not None:
+        predict_dictionary = {}
+        for predict_index in range(len(predicts)):
+            predict_value = predicts[predict_index]
+            if predict_value in predict_dictionary.keys():
+                predict_dictionary[predict_value].append(predict_index)
+            else:
+                predict_dictionary.update({predict_value:[predict_index]})
 
-            return_value = mimic_env.get_return(state=list(predict_dictionary.values()))
+        # return_value = mimic_env.get_return(state=list(predict_dictionary.values()))
+        return_value_log = mimic_env.get_return(state=list(predict_dictionary.values()))
+        return_value_log_struct = mimic_env.get_return(state=list(predict_dictionary.values()),
+                                                       apply_structure_cost=True)
+        return_value_var_reduction = mimic_env.get_return(state=list(predict_dictionary.values()),
+                                                          apply_variance_reduction=True)
             # print("Training return is {0}".format(return_value), file=log_file)
 
         summary = evaluation.summary()
@@ -68,7 +73,8 @@ class M5Tree():
         # print(evl)
         # print("Training summary is "+summary, file=log_file)
 
-        return return_value, mae, rmse, leaves_number
+        return return_value_log, return_value_log_struct, \
+               return_value_var_reduction, mae, rmse, leaves_number
 
 
     def test_weka_model(self, testing_data_dir, save_model_dir, log_file, mimic_env=None):
@@ -86,18 +92,20 @@ class M5Tree():
 
         evaluation = Evaluation(testing_data)
         predicts = evaluation.test_model(self.classifier, testing_data)
-        return_value = None
-        if mimic_env is not None:
-            predict_dictionary = {}
-            for predict_index in range(len(predicts)):
-                predict_value = predicts[predict_index]
-                if predict_value in predict_dictionary.keys():
-                    predict_dictionary[predict_value].append(predict_index)
-                else:
-                    predict_dictionary.update({predict_value:[predict_index]})
 
-            return_value = mimic_env.get_return(state=list(predict_dictionary.values()))
-            # print("Testing return is {0}".format(return_value), file=log_file)
+        predict_dictionary = {}
+        for predict_index in range(len(predicts)):
+            predict_value = predicts[predict_index]
+            if predict_value in predict_dictionary.keys():
+                predict_dictionary[predict_value].append(predict_index)
+            else:
+                predict_dictionary.update({predict_value:[predict_index]})
+
+        return_value_log = mimic_env.get_return(state=list(predict_dictionary.values()))
+        return_value_log_struct = mimic_env.get_return(state=list(predict_dictionary.values()),
+                                                       apply_structure_cost=True)
+        return_value_var_reduction = mimic_env.get_return(state=list(predict_dictionary.values()),
+                                                          apply_variance_reduction=True)
 
         summary = evaluation.summary()
         numbers = summary.split('\n')
@@ -109,7 +117,8 @@ class M5Tree():
         # print(evl)
         # print("Testing summary is "+summary, file=log_file)
 
-        return return_value, mae, rmse, leaves_number
+        return return_value_log, return_value_log_struct, \
+               return_value_var_reduction, mae, rmse, leaves_number
 
 
 

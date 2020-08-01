@@ -73,4 +73,4 @@ Mimic:
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/Assault-v0/saved_model'
     max_k: 10
-    ignore_dim: None # '[0, 2, 8, 9, 10, 12, 18, 19]'
+    ignore_dim: '[]'

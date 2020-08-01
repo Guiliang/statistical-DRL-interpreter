@@ -54,6 +54,7 @@ class MimicLearner():
             if len(options) > 0:
                 self.binary_max_node = options[1]
                 self.saved_model_c_puct = options[3]
+                self.play_number = options[5]
                 pass
 
         # if not local_test_flag:
@@ -390,7 +391,8 @@ class MimicLearner():
                                                                                               action_id)
             if not os.path.exists(data_dir):
                 generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
-            return_value, mae, rmse, leaves_number = self.mimic_model.test_weka_model(testing_data_dir=data_dir,
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number = self.mimic_model.test_weka_model(testing_data_dir=data_dir,
                                                                                      save_model_dir=save_model_dir,
                                                                                      log_file=log_file,
                                                                                      mimic_env=self.mimic_env)
@@ -419,22 +421,38 @@ class MimicLearner():
     def get_MCTS_nodes_dir(self, action_id):
 
         if self.game_name == 'flappybird' and action_id == 0:
-            if self.saved_model_c_puct == 0.01:
+            if self.saved_model_c_puct == 0.01 and self.play_number == 1000:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   "saved_nodes_action{1}_2020-04-30/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 1:
+            elif self.saved_model_c_puct == 1  and self.play_number == 1000:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   "saved_nodes_action{1}_2020-07-01/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.05:
+            elif self.saved_model_c_puct == 0.05  and self.play_number == 1000:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   "saved_nodes_action{1}_2020-07-10/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.02:
+            elif self.saved_model_c_puct == 0.02  and self.play_number == 1000:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   'saved_nodes_action{1}_CPUCT0_02_2020-07-13/'.format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0.05 and self.play_number == 250:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  'saved_nodes_action{1}_CPUCT0_05_2020-07-20/'.format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0 and self.play_number == 2:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  'saved_nodes_action{1}_CPUCT0_2020-07-22/'.format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  'saved_nodes_action{1}_CPUCT0_01_2020-07-25/'.format(self.game_name, action_id)
+            elif self.saved_model_c_puct == 0.1 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  'saved_nodes_action{1}_CPUCT0_1_2020-07-27/'.format(self.game_name, action_id)
             else:
                 raise ValueError("Unknown save model")
         elif self.game_name == 'flappybird' and action_id == 1:
@@ -536,7 +554,8 @@ class MimicLearner():
                                                                                               action_id)
             if not os.path.exists(data_dir):
                 generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
-            return_value, mae, rmse, leaves_number = self.mimic_model.train_weka_model(training_data_dir=data_dir,
+            return_value_log, return_value_log_struct, \
+            return_value_var_reduction, mae, rmse, leaves_number = self.mimic_model.train_weka_model(training_data_dir=data_dir,
                                                                                       save_model_dir=save_model_dir,
                                                                                       log_file=log_file,
                                                                                       mimic_env=self.mimic_env)

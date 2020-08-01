@@ -201,7 +201,8 @@ class MimicEnv(StaticEnv):
 
         if apply_variance_reduction:
             return self.initial_var - var_weighted_sum
-
+        # print(var_weighted_sum)
+        var_weighted_sum = 1e-6 if var_weighted_sum == 0 else var_weighted_sum
         log_var_weighted_sum = math.log(var_weighted_sum)
         if apply_structure_cost:
             structure_cost = 0

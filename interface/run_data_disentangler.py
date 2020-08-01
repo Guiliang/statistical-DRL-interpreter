@@ -11,7 +11,7 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'flappybird'
+    game_name = 'Assault-v0'
     deg_type = 'FVAE'
     if game_name == 'Assault-v0':
         config_path = "../environment_settings/assault_v0_config.yaml"
@@ -38,12 +38,12 @@ def run():
         raise EnvironmentError("Unknown running setting, please set up your own environment")
     DEG = Disentanglement(config=deg_config, deg_type=deg_type,
                           global_model_data_path=global_model_data_path)
-    if deg_type == 'FVAE':
-        DEG.train_fave()
-    elif deg_type == 'AAE':
-        DEG.train_aae()
-    else:
-        raise ValueError('Unknown deg type {0}'.format(deg_type))
+    # if deg_type == 'FVAE':
+    #     DEG.train_fave()
+    # elif deg_type == 'AAE':
+    #     DEG.train_aae()
+    # else:
+    #     raise ValueError('Unknown deg type {0}'.format(deg_type))
 
     if game_name == "flappybird":
         model_name = 'FVAE-1000000'

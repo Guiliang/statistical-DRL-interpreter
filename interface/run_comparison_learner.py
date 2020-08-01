@@ -16,7 +16,7 @@ def run():
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     game_name = 'flappybird'
-    method = 'cart'
+    method = 'm5-mt'
 
     if game_name == 'Assault-v0':
         action_ids = [2, 3, 4]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
@@ -26,7 +26,7 @@ def run():
         model_name = 'FVAE-1000000'
         config_path = "../environment_settings/space_invaders_v0_config.yaml"
     elif game_name == 'flappybird':
-        action_ids = [0, 1]
+        action_ids = [0]
         model_name = 'FVAE-1000000'
         config_path = "../environment_settings/flappybird_config.yaml"
     else:
@@ -34,14 +34,14 @@ def run():
 
     if method == 'mcts':
         options_dict = {
-            'flappybird':['max_node', 10, 'cpuct', 0.02],
+            'flappybird':['max_node', 10, 'cpuct', 0.02, 'play_number', 1000],
             # 'Assault-v0':[]
         }
         action_ids = [0]
         data_type = 'latent'
     elif method == 'cart':
         options_dict = {
-            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'best', 'min_samples_leaf', 5],
+            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
             # 'Assault-v0': ['max_leaf_nodes', 25, 'criterion', 'mse']
         }
         data_type = 'binary'
@@ -53,7 +53,7 @@ def run():
         data_type = 'latent'
     elif method == 'm5-rt':  # m5 regression tree
         options_dict = {
-            'flappybird': ["-R"],
+            'flappybird': ["-R", "-N", "-M", "1"],
             # 'Assault-v0': ["-N", "-R"]
         }
         data_type = 'color'
@@ -61,7 +61,7 @@ def run():
     elif method == 'm5-mt':  # m5 model tree
         # options = ["-M", "10"]
         options_dict = {
-            'flappybird':[],
+            'flappybird':["-N", "-M", "25"],
             'Assault-v0':["-N"]
         }
         data_type = 'color'
@@ -97,61 +97,61 @@ def run():
     testing_record_results = {'return_value_log':[], 'return_value_log_struct':[], 'return_value_var_reduction':[],
                               'mae': [], 'rmse': [], 'leaves_number': [], 'results_strs':[]}
 
-    try:
-        print("\nRunning for game {0} with {1}".format(game_name, method), file=log_file)
-        mimic_learner = MimicLearner(game_name=game_name,
-                                     method=method,
-                                     config=mimic_config,
-                                     deg_model_name=model_name,
-                                     local_test_flag=local_test_flag,
-                                     global_model_data_path=global_model_data_path,
-                                     log_file=log_file,
-                                     options=options)
+    # try:
+    print("\nRunning for game {0} with {1}".format(game_name, method), file=log_file)
+    mimic_learner = MimicLearner(game_name=game_name,
+                                 method=method,
+                                 config=mimic_config,
+                                 deg_model_name=model_name,
+                                 local_test_flag=local_test_flag,
+                                 global_model_data_path=global_model_data_path,
+                                 log_file=log_file,
+                                 options=options)
 
-        for action_id in action_ids:
-        # for action_id in [1]:
-            mimic_learner.iteration_number = 0
-            [return_value_log, return_value_log_struct,
-             return_value_var_reduction, mae, rmse,
-             leaves_number, results_str] = mimic_learner.train_mimic_model(action_id=action_id,
-                                                                           shell_round_number=None,
-                                                                           log_file=log_file,
-                                                                           launch_time=None,
-                                                                           data_type=data_type,
-                                                                           run_mcts=False)
-            train_record_results['return_value_log'].append(return_value_log)
-            train_record_results['return_value_log_struct'].append(return_value_log_struct)
-            train_record_results['return_value_var_reduction'].append(return_value_var_reduction)
-            train_record_results['mae'].append(mae)
-            train_record_results['rmse'].append(rmse)
-            train_record_results['leaves_number'].append(leaves_number)
-            train_record_results['results_strs'].append(results_str)
+    for action_id in action_ids:
+    # for action_id in [1]:
+        mimic_learner.iteration_number = 0
+        [return_value_log, return_value_log_struct,
+         return_value_var_reduction, mae, rmse,
+         leaves_number, results_str] = mimic_learner.train_mimic_model(action_id=action_id,
+                                                                       shell_round_number=None,
+                                                                       log_file=log_file,
+                                                                       launch_time=None,
+                                                                       data_type=data_type,
+                                                                       run_mcts=False)
+        train_record_results['return_value_log'].append(return_value_log)
+        train_record_results['return_value_log_struct'].append(return_value_log_struct)
+        train_record_results['return_value_var_reduction'].append(return_value_var_reduction)
+        train_record_results['mae'].append(mae)
+        train_record_results['rmse'].append(rmse)
+        train_record_results['leaves_number'].append(leaves_number)
+        train_record_results['results_strs'].append(results_str)
 
-            [return_value_log, return_value_log_struct,
-             return_value_var_reduction, mae, rmse,
-             leaves_number, results_str] = mimic_learner.test_mimic_model(action_id= action_id,
-                                                                          log_file=log_file,
-                                                                          data_type=data_type)
-            testing_record_results['return_value_log'].append(return_value_log)
-            testing_record_results['return_value_log_struct'].append(return_value_log_struct)
-            testing_record_results['return_value_var_reduction'].append(return_value_var_reduction)
-            testing_record_results['mae'].append(mae)
-            testing_record_results['rmse'].append(rmse)
-            testing_record_results['leaves_number'].append(leaves_number)
-            testing_record_results['results_strs'].append(results_str)
-        if 'mcts' not in method:
-            mimic_learner.mimic_model.__del__()
+        [return_value_log, return_value_log_struct,
+         return_value_var_reduction, mae, rmse,
+         leaves_number, results_str] = mimic_learner.test_mimic_model(action_id= action_id,
+                                                                      log_file=log_file,
+                                                                      data_type=data_type)
+        testing_record_results['return_value_log'].append(return_value_log)
+        testing_record_results['return_value_log_struct'].append(return_value_log_struct)
+        testing_record_results['return_value_var_reduction'].append(return_value_var_reduction)
+        testing_record_results['mae'].append(mae)
+        testing_record_results['rmse'].append(rmse)
+        testing_record_results['leaves_number'].append(leaves_number)
+        testing_record_results['results_strs'].append(results_str)
+    if 'mcts' not in method:
+        mimic_learner.mimic_model.__del__()
 
-        if log_file is not None:
-            log_file.close()
-    except Exception as e:
-        traceback.print_exc(file=log_file)
-        results_writer.close()
-        if log_file is not None:
-            log_file.write(str(e))
-            log_file.flush()
-            log_file.close()
-            # sys.stderr.write('finish shell round {0}'.format(shell_round_number))
+    if log_file is not None:
+        log_file.close()
+    # except Exception as e:
+    #     traceback.print_exc(file=log_file)
+    #     results_writer.close()
+    #     if log_file is not None:
+    #         log_file.write(str(e))
+    #         log_file.flush()
+    #         log_file.close()
+    #         # sys.stderr.write('finish shell round {0}'.format(shell_round_number))
 
     for results_str in train_record_results['results_strs']:
         results_writer.write(results_str+'\n')

@@ -20,7 +20,7 @@ import sys
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.02
+c_PUCT = 0.1
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -105,7 +105,7 @@ class MCTSNode:
         self.state = state
         self.n_actions_types = n_actions_types
         self.children = {}
-        self.children_state_pair = {}  # to prevent duplicated split resulting the same state (could be removed)
+        # self.children_state_pair = {}  # to prevent duplicated split resulting the same state (could be removed)
         # self.check_split_state_pair = {}  # applied during select_expand_action(), will be clean each time
         self.split_var_index_dict = {}  # for progressive widening
 
@@ -242,7 +242,7 @@ class MCTSNode:
                 # child_action_score_return.append((child_Q[dim] + noise_U))
         return child_action_score_return
 
-    def select_leaf(self, k, TreeEnv, max_exploration_depth = 5, dim_per_split=100,
+    def select_leaf(self, k, TreeEnv, max_exploration_depth = 5, dim_per_split=None,
                     original_var=None, avg_timer_record=None):
         """
          {'expand': [0, 0], 'action_score': [0, 0], 'add_node': [0, 0], 'back_up': [0, 0]}
@@ -277,7 +277,7 @@ class MCTSNode:
                     # print(current.split_var_index_dict.get(split_value))
                     topK_value_index_list += current.split_var_index_dict.get(split_value)
 
-            child_action_score_all = np.ones([len(current.state), self.n_actions_types, dim_per_split]) * float('-inf')
+            child_action_score_all = np.ones([len(current.state), self.n_actions_types, len(TreeEnv.data_all)]) * float('-inf')
             for j in range(len(current.state)):
                 # if current.subset_split_flag[j]:
                 child_action_score = current.child_action_score(subset_number=j)
@@ -329,41 +329,72 @@ class MCTSNode:
         check_split_state_pair_new = {}
         child_N_subset_dim = collections.defaultdict(float)
         child_W_subset_dim = collections.defaultdict(float)
-        split_values = np.sort(subset_data_dim)
-        split_gap = len(split_values) / dim_per_split
+        # split_values = np.sort(subset_data_dim)
+        # split_gap = len(split_values) / dim_per_split
         state_subset = state[subset_index]
         total_length = len(delta_data_all)
         split_value_weight_list= []
 
-        check_all_flag = False
-        if split_gap < 1:
-            dim_per_split = len(split_values)
-            check_all_flag = True
-        for split_index in range(dim_per_split):
+        assert len(state_subset) == len(subset_data_dim)
+        index_dim_value = np.stack([np.asarray(state_subset), subset_data_dim], axis=1)
+        # sort_index_dim_value = np.sort(np.stack([np.asarray(state_subset), subset_data_dim]), axis=1)
+        sort_index_dim_value = index_dim_value[index_dim_value[:, 1].argsort()]
+        # check_all_flag = False
+        # if split_gap < 1:
+        #     dim_per_split = len(split_values)
+        #     check_all_flag = True
+        split_subset_1_record = []
+        split_subset_2_record = sort_index_dim_value[:, 0].tolist()
+        split_subset_2_record = [int(i) for i in split_subset_2_record]  # float to int
+        sort_scanned_number = 0
+
+        split_subset_1_square_sum = 0
+        split_subset_1_sum = 0
+        split_subset_2_square_sum = np.sum([(delta_data_all[data_index])**2 for data_index in split_subset_2_record])
+        split_subset_2_sum = np.sum([delta_data_all[data_index] for data_index in split_subset_2_record])
+
+        for split_index in range(len(sort_index_dim_value)):
             skip_flag = False
-            if check_all_flag:
-                split_value = round(split_values[split_index].item(), 6)
-            else:
-                split_value = round(float(split_values[int(split_index * split_gap)]), 6)
+            # if check_all_flag:
+            #     split_value = round(split_values[split_index].item(), 6)
+            # else:
+            #     split_value = round(float(split_values[int(split_index * split_gap)]), 6)
+            split_value = sort_index_dim_value[split_index][1]
             var_weighted_sum = float(0)
 
-            split_subset_1 = []
-            split_subset_delta_1 = []
-            split_subset_2 = []
-            split_subset_delta_2 = []
-            for i in range(len(state_subset)):  # create subsplit
-                if subset_data_dim[i] < split_value:
-                    split_subset_1.append(state_subset[i])
-                    split_subset_delta_1.append(delta_data_all[state_subset[i]])
+
+            for scan_index in range(sort_scanned_number, len(sort_index_dim_value)):
+                if sort_index_dim_value[scan_index][1] < split_value:
+                    split_subset_1_record.append(int(sort_index_dim_value[scan_index][0]))
+                    split_subset_2_record.pop(0)
+
+                    split_subset_1_square_sum += (delta_data_all[int(sort_index_dim_value[scan_index][0])]**2)
+                    split_subset_1_sum += delta_data_all[int(sort_index_dim_value[scan_index][0])]
+
+                    split_subset_2_square_sum -= (delta_data_all[int(sort_index_dim_value[scan_index][0])]**2)
+                    split_subset_2_sum -= delta_data_all[int(sort_index_dim_value[scan_index][0])]
+
+                    # split_subset_delta_1.append(delta_data_all[int(sort_index_dim_value[scan_index][0])])
+                    # split_subset_delta_2.pop(0)
+
                 else:
-                    split_subset_2.append(state_subset[i])
-                    split_subset_delta_2.append(delta_data_all[state_subset[i]])
+                    sort_scanned_number = scan_index
+                    break
+            # split_subset_delta_1 = []
+            # split_subset_delta_2 = []
+            # for i in range(len(state_subset)):  # create subsplit
+            #     if subset_data_dim[i] < split_value:
+            #         # split_subset_1.append(state_subset[i])
+            #         split_subset_delta_1.append(delta_data_all[state_subset[i]])
+            #     else:
+            #         # split_subset_2.append(state_subset[i])
+            #         split_subset_delta_2.append(delta_data_all[state_subset[i]])
 
             new_state = []
             for state_index in range(len(state)):  # generate new state
                 if state_index == subset_index:
-                    new_state.append(split_subset_1)
-                    new_state.append(split_subset_2)
+                    new_state.append(split_subset_1_record)
+                    new_state.append(split_subset_2_record)
                 else:
                     new_state.append(state[state_index])
 
@@ -374,37 +405,46 @@ class MCTSNode:
             #     print('find you!')
             if check_split_state_pair.get(new_state_list) is not None:
                 action = check_split_state_pair.get(new_state_list)
-                if action_new != action:
-                    # prevent the duplicated split (different split methods but have the same state)
+                if action_new != action: # prevent the duplicated split (different split methods but have the same state)
                     var_weighted_sum = float('inf')
                 else:
+                    var_weighted_sum = float('inf')
                     skip_flag = True
             else:
                 check_split_state_pair.update({new_state_list: action_new})
                 check_split_state_pair_new.update({new_state_list: action_new})
 
-            if len(split_subset_1) == 0 or len(split_subset_2) == 0:
+            if len(split_subset_1_record) == 0 or len(split_subset_2_record) == 0:
                 var_weighted_sum = float('inf')  # prevent the empty set
 
             if add_estimate and var_weighted_sum != float('inf') and not skip_flag:
-                if len(split_subset_delta_1) > 0:  # compute the greedy variance estimates
+                if len(split_subset_1_record) > 0:  # compute the greedy variance estimates
                     # mu1, std1 = norm.fit(split_subset_delta_1)
-                    var1 = np.var(split_subset_delta_1)
-                    var_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * var1
+                    var1 = split_subset_1_square_sum/float(len(split_subset_1_record)) - \
+                           (split_subset_1_sum/float(len(split_subset_1_record)))**2
+                    # var1_tmp = np.var(split_subset_delta_1)
+                    # if abs(var1- var1_tmp) > 0.0000001:
+                    #     print("catch you")
+
+                    var_weighted_sum += (float(len(split_subset_1_record)) / total_length) * var1
                     # if var1 > 1e-6:
                     #     log_var1 = math.log(var1)
                     # else:
                     #     log_var1 = math.log(1e-6)
                     # std_weighted_sum += (float(len(split_subset_delta_1)) / total_length) * log_var1
-                if len(split_subset_delta_2) > 0:
+                if len(split_subset_2_record) > 0:
                     # mu2, std2 = norm.fit(split_subset_delta_2)
-                    var2 = np.var(split_subset_delta_2)
-                    var_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * var2
+                    var2 = split_subset_2_square_sum/float(len(split_subset_2_record)) - \
+                           (split_subset_2_sum/float(len(split_subset_2_record)))**2
+                    # var2_tmp = np.var(split_subset_delta_2)
+                    # if abs(var2- var2_tmp) > 0.0000001:
+                    #     print("catch you")
+                    var_weighted_sum += (float(len(split_subset_2_record)) / total_length) * var2
                     # if var2 > 1e-6:
                     #     log_var2 = math.log(var2)
                     # else:
                     #     log_var2 = math.log(1e-6)
-                    # std_weighted_sum += (float(len(split_subset_delta_2)) / total_length) * log_var2
+                    # std_weighted_sum += (float(len(split_subset_delta_2)) / total_lvar2_tmpength) * log_var2
 
                 if not apply_global_variance:
                     weight_var_reduction = len(state_subset) / total_length * var_list[
@@ -652,8 +692,8 @@ class MCTSNode:
             # Obtain state following given action.
             new_state, new_var_list = TreeEnv.next_state(self.state, action, self.var_list)
             new_state_list = mcts_state_to_list(new_state)
-            assert self.children_state_pair.get(new_state_list) is None
-            self.children_state_pair.update({new_state_list: action})
+            # assert self.children_state_pair.get(new_state_list) is None
+            # self.children_state_pair.update({new_state_list: action})
             self.children[action] = MCTSNode(state=new_state, n_actions_types=self.n_actions_types,
                                               var_list=new_var_list, random_seed=self.random_seed,
                                              action=action, parent=self, level=self.level+1,
@@ -1271,7 +1311,7 @@ def test_mcts(saved_nodes_dir, TreeEnv, action_id):
                     mcts_node = pickle.load(f)
                     mcts_node.states = []
                     del mcts_node.split_var_index_dict
-                    del mcts_node.children_state_pair
+                    # del mcts_node.children_state_pair
                     del mcts_node.children
                     del mcts_node.child_N
                     del mcts_node.child_W
@@ -1299,7 +1339,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
     process = psutil.Process(pid)  # supervise the usage of memory
 
     next_end_flag = False
-    simulations_per_round = 1000 # 1000
+    simulations_per_round = 200 # 1000
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER

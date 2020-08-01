@@ -186,7 +186,7 @@ def compute_regression_results(predictions, labels):
     return mae, rmse
 
 def count_actions():
-    action_values_dir = '/Local-Scratch/PycharmProjects/statistical-DRL-interpreter/example_data/flappybird/'
+    action_values_dir = '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/Assault-v0/'
     action_count = {}
     with open(action_values_dir + '/action_values.txt', 'r') as f:
         action_values = f.readlines()

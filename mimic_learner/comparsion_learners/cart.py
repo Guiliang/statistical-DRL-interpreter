@@ -12,6 +12,7 @@ class CARTRegressionTree():
         self.criterion = options[3]
         self.mode = options[4]
         self.min_samples_leaf = options[6]
+        # ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10]
 
     def train_mimic(self, training_data, mimic_env, save_model_dir, log_file):
         self.model = DecisionTreeRegressor(max_leaf_nodes=self.max_leaf_nodes,

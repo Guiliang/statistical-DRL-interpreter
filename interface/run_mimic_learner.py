@@ -32,7 +32,7 @@ def run():
     if opts.GAME_NAME is not None:
         game_name = opts.GAME_NAME
     else:
-        game_name = 'flappybird'
+        game_name = 'Assault-v0'
 
     if opts.METHOD_NAME is not None:
         method = opts.METHOD_NAME

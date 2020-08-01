@@ -1,7 +1,5 @@
 import csv
 import os
-import matplotlib.pyplot as plt
-import traceback
 import numpy as np
 
 from utils.plot_utils import plot_values_by_node
@@ -15,57 +13,102 @@ from config.mimic_config import DRLMimicConfig
 from mimic_learner.learner import MimicLearner
 
 
-def run_plot(game_name):
-    reward_log_all = {}
-    reward_log_struct_all = {}
-    var_reduction_all = {}
-    mae_all = {}
-    rmse_all = {}
-    leaves_all = {}
+def run_plot():
+
+
+    plotting_target = 'var_reduction'
+    game_name = 'flappybird'
 
     if game_name == 'flappybird':
-        cpuct = 0.01
-        action_ids = [0, 1]
+        action_ids = [0]
+        methods = [
+            "cart-fvae",
+            "vr-lmt-fvae",
+            'gn-lmt-fave',
+            "mcts"
+        ]
     else:
         raise ValueError('Unknown game name')
 
-    for action in action_ids:
-        reward_log_all.update({action: []})
-        reward_log_struct_all.update({action: []})
-        var_reduction_all.update({action: []})
-        mae_all.update({action: []})
-        rmse_all.update({action: []})
-        leaves_all.update({action: []})
+    plot_x_values_all  = []
+    plot_y_values_all = []
 
-        plot_results_path = '../results/plot_results/' \
-                            'testing-flappybird-action{0}-by-splits' \
-                            '-results-mcts-max_node-None-cpuct-{0}.txt'.format(cpuct, action)
-        with open(plot_results_path, 'rb') as f:
-            read_value_lines = f.readlines()
-        for read_value_line in read_value_lines[1:]:
-            [reward_log, reward_log_struct,
-             var_reduction, mae, rmse, leaves] = read_value_line.split(',')
-            reward_log_all[action].append(reward_log)
-            reward_log_struct_all[action].append(reward_log_struct)
-            var_reduction_all[action].append(var_reduction)
-            mae_all[action].append(mae)
-            rmse_all[action].append(rmse)
-            leaves_all[action].append(leaves)
-
-    plot_x_values  = []
-    plot_y_values = []
-    for leaf_node in range(1, 60, 1):
-        plot_x_values.append(leaf_node)
-        plot_y_values.append([])
+    for method in methods:
+        var_reduction_all = {}
+        rmse_all = {}
         for action in action_ids:
-            for value in var_reduction_all[action]:
-                if value[-1] == leaf_node:
-                    plot_y_values[-1].append(value)
-                    break
-        assert len(plot_y_values[-1]) == len(action_ids)
-    plot_y_values = np.asarray(plot_y_values).mean(axis=1)
+            if game_name == 'flappybird':
+                if method == 'cart-fvae':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/' \
+                                        'testing-flappybird-action0-by-splits-' \
+                                        'results-cart-fvae-max_leaf_nodes-None-' \
+                                        'criterion-mae-best-min_samples_leaf-1.txt'.format(action)
 
-    plot_values_by_node([plot_x_values], [plot_y_values], value_type='var_reduction')
+                elif method == 'vr-lmt-fvae':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/' \
+                                        'testing_tree_impact_training_latent_data' \
+                                        '_flappybird_action_{0}_minInst10_regul0.1_bin25_minQ0_splitm3'.format(action)
+                elif method == 'gn-lmt-fave':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/' \
+                                        'testing_tree_impact_training_latent_data' \
+                                        '_flappybird_action_{0}_minInst10_regul1_bin100_minQ0.01_splitm1'.format(action)
+                elif method == 'mcts':
+                    cpuct = 0.01
+                    play_number = 1000
+                    plot_results_path = '../results/plot_results/' \
+                                        'testing-flappybird-action{0}-by-splits' \
+                                        '-results-mcts-max_node-None-cpuct-{1}-play-{2}.txt'.format(action,
+                                                                                                    cpuct,
+                                                                                                    play_number)
+                # elif plotting_target == 'rmse':
+                #     if method == 'cart-fvae':
+                #         plot_results_path = ''
+                #     elif method == 'vr-lmt-fvae':
+                #         plot_results_path = ''
+                #     elif method == 'gn-lmt-fave':
+                #         plot_results_path = ''
+                #     elif method == 'mcts':
+                #         plot_results_path = ''
+
+            else:
+                raise ValueError('Uknown method {0}'.format(method))
+
+            with open(plot_results_path, 'r') as f:
+                read_value_lines = f.readlines()
+            for read_value_line in read_value_lines[1:]:
+                [reward_log, reward_log_struct,
+                 var_reduction, mae, rmse, leaves] = read_value_line.split(',')
+                leaves = float(leaves.replace('\n',''))
+                var_reduction = float(var_reduction)
+                rmse = float(rmse)
+                if var_reduction_all.get(leaves) is None:
+                    var_reduction_all.update({leaves:[var_reduction]})
+                    rmse_all.update({leaves:[rmse]})
+                else:
+                    var_reduction_all[leaves].append(var_reduction)
+                    rmse_all[leaves].append(rmse)
+
+            plot_x_values  = []
+            plot_y_values = []
+            for leaf_node in range(1, 31, 1):
+                plot_x_values.append(leaf_node)
+                if plotting_target == 'var_reduction':
+                    plot_y_values.append(var_reduction_all[leaf_node])
+                elif plotting_target == 'rmse':
+                    plot_y_values.append(rmse_all[leaf_node])
+                assert len(plot_y_values[-1]) == len(action_ids)
+
+            plot_y_values = np.asarray(plot_y_values).mean(axis=1)
+            plot_x_values_all.append(plot_x_values)
+            plot_y_values_all.append(plot_y_values)
+
+    plot_values_by_node(plot_x_values_all, plot_y_values_all,
+                        value_type=plotting_target,
+                        plotting_target = game_name,
+                        methods=methods)
 
 
 
@@ -93,13 +136,17 @@ def run_generate_values():
 
     if method == 'mcts':
         options_dict = {
-            'flappybird':['max_node', None, 'cpuct', 0.02],
+            'flappybird':['max_node', None, 'cpuct', 0.1, 'play', 200],
             # 'Assault-v0':[]
         }
     elif method == 'cart-fvae':
         options_dict = {
-            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'best'],
+            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 40],
             # 'Assault-v0': ['max_leaf_nodes', 15, 'criterion', 'mae']
+        }
+    elif method == 'cart':
+        options_dict = {
+            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 1],
         }
     else:
         raise ValueError("unknown model name {0}".format(method))
@@ -148,13 +195,16 @@ def run_generate_values():
     mimic_learner.iteration_number = 0
     train_results_csv_writer.writerow(['return_value_log', 'return_value_log_struct', 'return_value_var_reduction',
                                  'mae', 'rmse', 'leaves'])
-    mimic_learner.data_loader(episode_number=4, target="latent", action_id=action_id)
-    mimic_learner.mimic_env.assign_data(mimic_learner.memory)
     if method == 'mcts':
+        mimic_learner.data_loader(episode_number=4, target="latent", action_id=action_id)
+        mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         saved_nodes_dir = mimic_learner.get_MCTS_nodes_dir(action_id)
         return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
         mae_all, rmse_all, leaves_number_all = mimic_learner.predict_mcts_by_splits(action_id, saved_nodes_dir)
-    elif method == 'cart-fvae':
+    elif method == 'cart-fvae' or method == 'cart':
+        target = "latent" if method == 'cart-fvae' else "raw"
+        mimic_learner.data_loader(episode_number=4, target=target, action_id=action_id)
+        mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         return_value_log_all = []
         return_value_log_struct_all = []
         return_value_var_reduction_all = []
@@ -191,7 +241,9 @@ def run_generate_values():
     else:
         raise ValueError("Unknown method {0}".format(method))
 
-    for i in range(len(return_value_log_all)):
+    j = 1 if method == 'mcts' else 0 # skip some redundant results
+
+    for i in range(j, len(return_value_log_all)):
         train_results_csv_writer.writerow([round(return_value_log_all[i], 4),
                                      round(return_value_log_struct_all[i], 4),
                                      round(return_value_var_reduction_all[i], 4),
@@ -202,13 +254,17 @@ def run_generate_values():
     mimic_learner.iteration_number = int(mimic_learner.episodic_sample_number * 45)
     test_results_csv_writer.writerow(['return_value_log', 'return_value_log_struct', 'return_value_var_reduction',
                                  'mae', 'rmse', 'leaves'])
-    mimic_learner.data_loader(episode_number=45.5, target="latent", action_id=action_id)
-    mimic_learner.mimic_env.assign_data(mimic_learner.memory)
+
     if method == 'mcts':
+        mimic_learner.data_loader(episode_number=45.5, target="latent", action_id=action_id)
+        mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         saved_nodes_dir = mimic_learner.get_MCTS_nodes_dir(action_id)
         return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
         mae_all, rmse_all, leaves_number_all = mimic_learner.predict_mcts_by_splits(action_id, saved_nodes_dir)
-    elif method == 'cart-fvae':
+    elif method == 'cart-fvae' or method == "cart":
+        target = "latent" if method == 'cart-fvae' else "raw"
+        mimic_learner.data_loader(episode_number=45.5, target=target, action_id=action_id)
+        mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         return_value_log_all = []
         return_value_log_struct_all = []
         return_value_var_reduction_all = []
@@ -245,7 +301,7 @@ def run_generate_values():
     else:
         raise ValueError("Unknown method {0}".format(method))
 
-    for i in range(len(return_value_log_all)):
+    for i in range(j, len(return_value_log_all)):
         test_results_csv_writer.writerow([round(return_value_log_all[i], 4),
                                      round(return_value_log_struct_all[i], 4),
                                      round(return_value_var_reduction_all[i], 4),
@@ -257,6 +313,7 @@ def run_generate_values():
 
 
 if __name__ == "__main__":
+    # run_plot()
     run_generate_values()
     exit(0)
 

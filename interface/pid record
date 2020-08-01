@@ -1,0 +1,4 @@
+command nohup ./program >/dev/null 2>log &
+
+name, pid
+output-single-cput0_01-play200-action0-2020-7-25.out, 16013

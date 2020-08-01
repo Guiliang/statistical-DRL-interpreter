@@ -24,11 +24,14 @@ def plot_decision_boundary(input_data, target_data, tree_model, plot_step = 0.02
     plt.ylabel("Latent dimension 5")
     plt.savefig('./decision_boundary.png')
 
-def plot_values_by_node(x_values_method_all, y_values_method_all, value_type):
+def plot_values_by_node(x_values_method_all, y_values_method_all, value_type, plotting_target, methods):
     plt.figure()
     for method_index in range(len(x_values_method_all)):
-        plt.scatter(x_values_method_all[method_index], y_values_method_all[method_index])
+        plt.scatter(x_values_method_all[method_index], y_values_method_all[method_index], label=methods[method_index])
         plt.plot(x_values_method_all[method_index], y_values_method_all[method_index])
-    plt.savefig('../results/plot_results/{0}_by_node.png'.format(value_type))
+    plt.xlabel("The Number of Leaves")
+    plt.ylabel(value_type)
+    plt.legend()
+    plt.savefig('../results/plot_results/{0}_{1}_by_node.png'.format(value_type, plotting_target))
 
 
