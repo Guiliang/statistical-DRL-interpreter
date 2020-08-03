@@ -1421,7 +1421,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                          avg_timer_record=avg_timer_record,
                          TreeEnv=TreeEnv, log_file=log_file,
                          process=process, pid=pid)
-        global c_PUCT
+        # global c_PUCT
         c_PUCT -= c_puct_step_size
         round_counter += 1
         k = k + 1 if k < max_k else k
