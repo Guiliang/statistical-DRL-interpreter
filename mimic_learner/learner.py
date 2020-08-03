@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from copy import deepcopy
 import torch.nn.functional as F
-from mimic_learner.comparsion_learners.m5 import generate_weka_training_data, M5Tree
 from mimic_learner.mcts_learner.mcts import test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
@@ -41,6 +40,7 @@ class MimicLearner():
         if 'cart' in self.method:
             self.mimic_model = CARTRegressionTree(model_name=self.method, options=options)
         elif 'm5' in self.method:
+            from mimic_learner.comparsion_learners.m5 import M5Tree
             self.mimic_model = M5Tree(model_name=self.method, options=options)
         else:
             self.mimic_model = None
@@ -382,6 +382,7 @@ class MimicLearner():
                                                 mimic_env=self.mimic_env,
                                                 log_file=log_file)
         elif self.method == 'm5-rt' or self.method == 'm5-mt':
+            from mimic_learner.comparsion_learners.m5 import generate_weka_training_data
             self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
@@ -545,6 +546,7 @@ class MimicLearner():
                                                log_file=log_file)
 
         elif self.method == 'm5-rt' or self.method == 'm5-mt':
+            from mimic_learner.comparsion_learners.m5 import generate_weka_training_data
             self.data_loader(episode_number=4, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
