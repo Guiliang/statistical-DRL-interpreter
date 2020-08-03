@@ -48,8 +48,8 @@ def run():
     if game_name == "flappybird":
         model_name = 'FVAE-1000000'
     elif game_name == "Assault-v0":
-        # model_name = "FVAE-1000000"
-        model_name = "FVAE-1000000-bak-4-21"
+        model_name = "FVAE-1000000"
+        # model_name = "FVAE-1000000-bak-4-21"
     elif game_name == "Breakout-v0":
         model_name = "FVAE-1000000"
     elif game_name == "SpaceInvaders-v0":

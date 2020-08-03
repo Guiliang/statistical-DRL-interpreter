@@ -18,7 +18,9 @@ class CARTRegressionTree():
         self.model = DecisionTreeRegressor(max_leaf_nodes=self.max_leaf_nodes,
                                            criterion= self.criterion,
                                            splitter=self.mode,
-                                           min_samples_leaf=self.min_samples_leaf)
+                                           min_samples_leaf=self.min_samples_leaf,
+                                           # max_features = 8
+                                           )
         self.model.fit(training_data[0], training_data[1])
         # self.print_tree()
         leaves_number = (self.model.tree_.node_count+1)/2

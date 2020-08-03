@@ -15,11 +15,11 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'flappybird'
-    method = 'm5-mt'
+    game_name = 'Assault-v0'
+    method = 'm5-rt'
 
     if game_name == 'Assault-v0':
-        action_ids = [2, 3, 4]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
+        action_ids = [2]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
         model_name = 'FVAE-1000000'
         config_path = "../environment_settings/assault_v0_config.yaml"
     elif game_name == 'SpaceInvaders-v0':
@@ -42,19 +42,19 @@ def run():
     elif method == 'cart':
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
-            # 'Assault-v0': ['max_leaf_nodes', 25, 'criterion', 'mse']
+            'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
         }
         data_type = 'binary'
     elif method == 'cart-fvae':
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10],
-            # 'Assault-v0': ['max_leaf_nodes', 15, 'criterion', 'mae']
+            'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20]
         }
         data_type = 'latent'
     elif method == 'm5-rt':  # m5 regression tree
         options_dict = {
             'flappybird': ["-R", "-N", "-M", "1"],
-            # 'Assault-v0': ["-N", "-R"]
+            'Assault-v0': ["-R", "-N", "-M", "20"]
         }
         data_type = 'color'
         # options = ["-R"]
@@ -62,7 +62,7 @@ def run():
         # options = ["-M", "10"]
         options_dict = {
             'flappybird':["-N", "-M", "25"],
-            'Assault-v0':["-N"]
+            'Assault-v0':["-N", "-M", "25"]
         }
         data_type = 'color'
     else:
@@ -70,7 +70,7 @@ def run():
     options = options_dict[game_name]
 
     option_str = '-'.join([str(option) for option in options])
-    results_saving_dir = '../results/comparison_results/{0}-results-{1}-{2}.txt'.format(game_name, method, option_str)
+    results_saving_dir = '../results/comparison_results/{0}/{0}-results-{1}-{2}.txt'.format(game_name, method, option_str)
     results_writer = open(results_saving_dir, 'w')
 
     local_test_flag = False

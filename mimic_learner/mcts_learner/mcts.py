@@ -20,7 +20,7 @@ import sys
 from utils.general_utils import handle_dict_list
 from utils.memory_utils import mcts_state_to_list, display_top
 
-c_PUCT = 0.1
+c_PUCT = 0.005
 # Dirichlet noise alpha parameter.
 NOISE_VAR = 0.00004  # 0.00001 to 0.00005
 
@@ -956,7 +956,7 @@ class MCTS:
         num_parallel = self.simulations_per_round
         leaves = []
         np.random.seed(self.random_seed)
-        print_gap = 100
+        print_gap = 50
         select_time_t0 = time.time()
         while len(leaves) < num_parallel:
             if len(leaves) % print_gap == 0:
@@ -1344,6 +1344,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
         global SPLIT_POOL
         global PROCESS_NUMBER
         PROCESS_NUMBER = 10-len(ignored_dim)
+        print("Parallel process number is {0}".format(PROCESS_NUMBER))
         SPLIT_POOL = mp.Pool(processes=PROCESS_NUMBER)
     print('Process number is {0}'.format(PROCESS_NUMBER), file=log_file)
     tracemalloc.start()

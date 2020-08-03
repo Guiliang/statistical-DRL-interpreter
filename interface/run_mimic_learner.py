@@ -33,6 +33,8 @@ def run():
         game_name = opts.GAME_NAME
     else:
         game_name = 'Assault-v0'
+        opts.ACTION_ID=2
+        # config_game_name = 'assault_v0'
 
     if opts.METHOD_NAME is not None:
         method = opts.METHOD_NAME
@@ -41,27 +43,30 @@ def run():
 
     if game_name == 'flappybird':
         model_name = 'FVAE-1000000'
+        config_game_name = 'flappybird'
     elif game_name == 'Assault-v0':
         model_name = 'FVAE-1000000'
+        config_game_name = 'assault_v0'
     elif game_name == 'Breakout-v0':
         model_name = 'FVAE-1000000'
+        config_game_name = 'breakout_v0'
     else:
         raise ValueError("Unknown game name {0}".format(game_name))
 
     local_test_flag = False
     if local_test_flag:
-        mimic_config_path = "../environment_settings/{0}_config.yaml".format(game_name)
+        mimic_config_path = "../environment_settings/{0}_config.yaml".format(config_game_name)
         mimic_config = DRLMimicConfig.load(mimic_config_path)
         mimic_config.DEG.FVAE.dset_dir = '../example_data'
         global_model_data_path = ''
         mimic_config.Mimic.Learn.episodic_sample_number = 49
     elif os.path.exists("/Local-Scratch/oschulte/Galen"):
-        mimic_config_path = "../environment_settings/{0}_config.yaml".format(game_name)
+        mimic_config_path = "../environment_settings/{0}_config.yaml".format(config_game_name)
         mimic_config = DRLMimicConfig.load(mimic_config_path)
         global_model_data_path = "/Local-Scratch/oschulte/Galen"
     elif os.path.exists("/home/functor/scratch/Galen/project-DRL-Interpreter"):
         mimic_config_path = "/home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/" \
-                                 "environment_settings/{0}_config.yaml".format(game_name)
+                                 "environment_settings/{0}_config.yaml".format(config_game_name)
         mimic_config = DRLMimicConfig.load(mimic_config_path)
         global_model_data_path = "/home/functor/scratch/Galen/project-DRL-Interpreter"
     else:

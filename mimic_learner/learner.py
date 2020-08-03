@@ -141,6 +141,7 @@ class MimicLearner():
                     z1 = z1.cpu().numpy()
                 # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
                 if action_index_t0 == action_id:
+                    # print(len(self.memory))
                     self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
                 z0 = z1
             elif target == "raw" or target == 'color' or target == 'binary':
@@ -552,6 +553,7 @@ class MimicLearner():
                                                            '{0}/{1}-aid{2}-weka.model'.format(self.game_name,
                                                                                               self.method,
                                                                                               action_id)
+            "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/Assault-v0/m5-weka"
             if not os.path.exists(data_dir):
                 generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
             return_value_log, return_value_log_struct, \

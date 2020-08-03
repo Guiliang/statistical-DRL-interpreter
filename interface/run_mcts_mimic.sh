@@ -1,8 +1,8 @@
 #!/bin/bash
-launch_time="2020-7-31"
+launch_time="2020-8-02"
 aid=2
-game=flappybird
-log_dir="${game}-output-single-cput0_1-play200-action${aid}-${launch_time}.out"
+game=Assault-v0
+log_dir="${game}-output-single-cput0_005-play200-action${aid}-${launch_time}.out"
 touch $log_dir
 for ((n=0;n<31;n++))
 do

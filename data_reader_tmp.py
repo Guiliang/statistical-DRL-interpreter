@@ -51,7 +51,7 @@ class flappybird_prob:
 def data_loader(episode_number, action_id,
                 data_save_dir, dientangler,
                 image_type,
-                game_name='flappybird',
+                game_name,
                 iteration_number=0):
     memory = []
     action_number = 2
@@ -65,6 +65,10 @@ def data_loader(episode_number, action_id,
         if game_name == 'flappybird':
             for i in range(action_number):
                 action_values_list[i] = float(action_value_items[i + 1])
+        elif game_name == 'Assault-v0' or game_name == 'SpaceInvaders-v0':
+            value = float(action_value_items[1])
+        else:
+            raise ValueError('Unknown game {0}'.format(game_name))
         reward = float(action_value_items[-1])
         if reward > 1:
             reward = 1
@@ -98,6 +102,8 @@ def data_loader(episode_number, action_id,
          reward_t1, value_t1] = gather_data_values(action_values[iteration_number + 1])
         if game_name == 'flappybird':
             delta = max(action_values_list_t1) - action_values_list_t0[action_index_t0] + reward_t0
+        elif game_name == 'Assault-v0' or game_name == 'SpaceInvaders-v0':
+            delta = value_t1 - value_t0 + reward_t0
         else:
             raise ValueError('Unknown game {0}'.format(game_name))
 
@@ -116,6 +122,7 @@ def data_loader(episode_number, action_id,
             # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
             if action_index_t0 == action_id:
                 memory.append([z0, action_index_t0, reward_t0, z1, delta])
+                print(len(memory))
             z0 = z1
         elif image_type == "origin":
             flatten_image_t1 = np.array(image).flatten()
@@ -160,37 +167,52 @@ def write_data_text(data, writer):
 
 # do not run if called by another file
 if __name__ == '__main__':
-    game_name = 'flappybird'
+    game_name = 'Assault-v0'
     image_type = 'latent'
     global_model_data_path = "/Local-Scratch/oschulte/Galen"
-    mimic_config_path = "./environment_settings/{0}_config.yaml".format(game_name)
+
+    if game_name == 'flappybird':
+        model_name = 'FVAE-1000000'
+        config_game_name = 'flappybird'
+    elif game_name == 'Assault-v0':
+        model_name = 'FVAE-1000000'
+        config_game_name = 'assault_v0'
+    elif game_name == 'Breakout-v0':
+        model_name = 'FVAE-1000000'
+        config_game_name = 'breakout_v0'
+    else:
+        raise ValueError("Unknown game name {0}".format(game_name))
+
+    mimic_config_path = "./environment_settings/{0}_config.yaml".format(config_game_name)
     mimic_config = DRLMimicConfig.load(mimic_config_path)
 
     dientangler = Disentanglement(mimic_config, 'FVAE', False, global_model_data_path)
-    dientangler.load_checkpoint(ckptname= 'FVAE-1000000', testing_flag=True, log_file=None)
+    dientangler.load_checkpoint(ckptname= model_name, testing_flag=True, log_file=None)
 
-    for aid in range(2):
+    for aid in [2, 3, 4]:
         data_save_dir = '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
 
         training_data_action = data_loader(episode_number=4, action_id=aid,
                                            data_save_dir=data_save_dir,
                                            dientangler=dientangler,
                                            image_type='latent',
+                                           game_name = game_name,
                                            iteration_number=0)
 
 
         iteration_number = 1000 * 45
         testing_data_action = data_loader(episode_number=45.5, action_id=aid,
-                                           data_save_dir=data_save_dir,
-                                           dientangler=dientangler,
-                                           image_type='latent',
-                                           iteration_number=iteration_number)
+                                          data_save_dir=data_save_dir,
+                                          dientangler=dientangler,
+                                          image_type='latent',
+                                          game_name = game_name,
+                                          iteration_number=iteration_number)
 
         # create training and testing files
-        impact_file_name_training = 'impact_training_{0}_data_flappybird_action_{1}.csv'.format(image_type, aid)
+        impact_file_name_training = 'impact_training_{0}_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
         impact_file_Writer_training = open('./LMUT_data/' + impact_file_name_training, 'w')
 
-        impact_file_name_testing = 'impact_testing_{0}_data_flappybird_action_{1}.csv'.format(image_type, aid)
+        impact_file_name_testing = 'impact_testing_{0}_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
         impact_file_Writer_testing = open('./LMUT_data/' + impact_file_name_testing, 'w')
 
         print('Writing training csv for action {}...'.format(aid))

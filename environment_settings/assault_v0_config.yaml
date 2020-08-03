@@ -72,5 +72,5 @@ Mimic:
     replay_memory_size: 10000
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/Assault-v0/saved_model'
-    max_k: 10
+    max_k: 5
     ignore_dim: '[]'
