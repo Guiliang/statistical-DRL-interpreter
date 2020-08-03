@@ -8,4 +8,5 @@ cd /home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpret
 source sdl-venv-py37/bin/activate
 cat requirements.txt | xargs -n 1 pip install
 cd /home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/interface
+chmod 777 run_mcts_mimic.sh
 ./run_mcts_mimic.sh
