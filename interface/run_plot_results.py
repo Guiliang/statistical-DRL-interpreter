@@ -117,9 +117,9 @@ def run_generate_values():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'flappybird'
-    method = 'mcts'
-    action_id = 0
+    game_name = 'SpaceInvaders-v0'
+    method = 'cart-fvae'
+    action_id = 4
     if game_name == 'Assault-v0':
         # action_ids = [2, 3, 4]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
         model_name = 'FVAE-1000000'
@@ -141,8 +141,8 @@ def run_generate_values():
         }
     elif method == 'cart-fvae':
         options_dict = {
-            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 40],
-            # 'Assault-v0': ['max_leaf_nodes', 15, 'criterion', 'mae']
+            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
         }
     elif method == 'cart':
         options_dict = {
@@ -154,12 +154,12 @@ def run_generate_values():
 
     option_str = '-'.join([str(option) for option in options])
 
-    training_results_saving_dir = '../results/plot_results/training-{0}-action{1}' \
+    training_results_saving_dir = '../results/plot_results/{0}/training-{0}-action{1}' \
                                   '-by-splits-results-{2}-{3}.txt'.format(game_name, action_id, method, option_str)
     training_results_writer = open(training_results_saving_dir, 'w')
     train_results_csv_writer = csv.writer(training_results_writer)
 
-    testing_results_saving_dir = '../results/plot_results/testing-{0}-action{1}' \
+    testing_results_saving_dir = '../results/plot_results/{0}/testing-{0}-action{1}' \
                                  '-by-splits-results-{2}-{3}.txt'.format(game_name, action_id, method, option_str)
     testing_results_writer = open(testing_results_saving_dir, 'w')
     test_results_csv_writer = csv.writer(testing_results_writer)

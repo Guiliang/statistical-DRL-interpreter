@@ -8,7 +8,7 @@ import numpy as np
 from copy import deepcopy
 import torch.nn.functional as F
 from mimic_learner.mcts_learner import mcts
-print (mcts.c_PUCT)
+# print (mcts.c_PUCT)
 from mimic_learner.mcts_learner.mcts import test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
@@ -475,7 +475,8 @@ class MimicLearner():
 
         return saved_nodes_dir
 
-    def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type, run_mcts=False):
+    def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type,
+                          run_mcts=False, c_puct=None):
         # mcts_file_name = None
         return_value_log = None
         if self.method == 'mcts':
@@ -483,6 +484,8 @@ class MimicLearner():
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             if run_mcts:
+                if c_puct is not None:
+                    mcts.c_PUCT = c_puct
                 mcts_saved_dir = self.global_model_data_path + self.mcts_saved_dir
                 shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved_action{0}_{1}.pkl'.format(action_id, launch_time)
                 execute_episode_single(num_simulations=self.num_simulations,

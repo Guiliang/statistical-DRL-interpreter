@@ -1,8 +1,9 @@
 #!/bin/bash
 launch_time="2020-8-03"
 aid=4
+cpuct=0.005
 game=SpaceInvaders-v0
-log_dir="${game}-output-single-cput0_001-play200-action${aid}-${launch_time}.out"
+log_dir="${game}-output-single-cput${cpuct}-play200-action${aid}-${launch_time}.out"
 touch $log_dir
 for ((n=0;n<31;n++))
 do
