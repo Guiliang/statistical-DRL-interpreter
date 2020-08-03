@@ -15,7 +15,7 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'Assault-v0'
+    game_name = 'SpaceInvaders-v0'
     method = 'm5-rt'
 
     if game_name == 'Assault-v0':
@@ -44,18 +44,21 @@ def run():
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
             'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10],
         }
         data_type = 'binary'
     elif method == 'cart-fvae':
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10],
-            'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20]
+            'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10]
         }
         data_type = 'latent'
     elif method == 'm5-rt':  # m5 regression tree
         options_dict = {
             'flappybird': ["-R", "-N", "-M", "1"],
-            'Assault-v0': ["-R", "-N", "-M", "20"]
+            'Assault-v0': ["-R", "-N", "-M", "20"],
+            'SpaceInvaders-v0': ["-R", "-N", "-M", "1"]
         }
         data_type = 'color'
         # options = ["-R"]

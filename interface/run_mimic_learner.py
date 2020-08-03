@@ -32,8 +32,8 @@ def run():
     if opts.GAME_NAME is not None:
         game_name = opts.GAME_NAME
     else:
-        game_name = 'Assault-v0'
-        opts.ACTION_ID=2
+        game_name = 'SpaceInvaders-v0'
+        opts.ACTION_ID=4
         # config_game_name = 'assault_v0'
 
     if opts.METHOD_NAME is not None:
@@ -44,6 +44,9 @@ def run():
     if game_name == 'flappybird':
         model_name = 'FVAE-1000000'
         config_game_name = 'flappybird'
+    elif game_name == 'SpaceInvaders-v0':
+        model_name = 'FVAE-1000000'
+        config_game_name = "space_invaders_v0"
     elif game_name == 'Assault-v0':
         model_name = 'FVAE-1000000'
         config_game_name = 'assault_v0'
