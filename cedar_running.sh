@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --time=20:00:00
+#SBATCH --time=60:00:00
 #SBATCH --mem=64G
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=20
 #SBATCH --account=def-functor
-#SBATCH --output=output-single-cput0_01-2020-3-25.out
+#SBATCH --output=output-single-cput0_01-2020-8-02.out
 cd /home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/
-#virtualenv python2
+#virtualenv python3
 source sdl-venv-py37/bin/activate
 cd /home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/interface
-python ./run_mimic_learner.py
+nohup ./run_mcts_mimic.sh >/dev/null 2>log &

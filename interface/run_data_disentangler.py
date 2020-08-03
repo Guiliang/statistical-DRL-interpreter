@@ -11,7 +11,7 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'Assault-v0'
+    game_name = 'SpaceInvaders-v0'
     deg_type = 'FVAE'
     if game_name == 'Assault-v0':
         config_path = "../environment_settings/assault_v0_config.yaml"

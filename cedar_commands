@@ -1,3 +1,4 @@
 scp -r /Local-Scratch/PycharmProjects/statistical-DRL-interpreter/LMUT_data/* functor@cedar.computecanada.ca:/home/functor/scratch/xiangyus/LMUT/csv_files/flappybird/
+scp -r /Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/Assault-v0 functor@cedar.computecanada.ca:/home/functor/scratch/Galen/project-DRL-Interpreter/DRL-interpreter-model/data/
 ssh functor@cedar.computecanada.ca
 tEMJod28FEvePA

@@ -23,6 +23,7 @@ def run():
         model_name = 'FVAE-1000000'
         config_path = "../environment_settings/assault_v0_config.yaml"
     elif game_name == 'SpaceInvaders-v0':
+        action_ids = [4]
         model_name = 'FVAE-1000000'
         config_path = "../environment_settings/space_invaders_v0_config.yaml"
     elif game_name == 'flappybird':

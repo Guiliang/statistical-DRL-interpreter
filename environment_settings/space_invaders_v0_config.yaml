@@ -73,4 +73,4 @@ Mimic:
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/SpaceInvaders-v0/saved_model'
     max_k: 10
-    ignore_dim: None
+    ignore_dim: '[0, 4, 7]'  # {0: 1303, 1: 6917, 2: 8575, 3: 9694, 4: 10050, 5: 3461}
