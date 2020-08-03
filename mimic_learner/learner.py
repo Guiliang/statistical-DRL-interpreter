@@ -7,6 +7,8 @@ import torch
 import numpy as np
 from copy import deepcopy
 import torch.nn.functional as F
+from mimic_learner.mcts_learner import mcts
+print (mcts.c_PUCT)
 from mimic_learner.mcts_learner.mcts import test_mcts, execute_episode_single
 from mimic_learner.mcts_learner.mimic_env import MimicEnv
 from data_disentanglement.disentanglement import Disentanglement
