@@ -118,7 +118,7 @@ def run_generate_values():
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     game_name = 'SpaceInvaders-v0'
-    method = 'cart-fvae'
+    method = 'mcts'
     action_id = 4
     if game_name == 'Assault-v0':
         # action_ids = [2, 3, 4]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
@@ -137,7 +137,7 @@ def run_generate_values():
     if method == 'mcts':
         options_dict = {
             'flappybird':['max_node', None, 'cpuct', 0.1, 'play', 200],
-            # 'Assault-v0':[]
+            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.001, 'play', 200],
         }
     elif method == 'cart-fvae':
         options_dict = {
@@ -304,7 +304,7 @@ def run_generate_values():
     for i in range(j, len(return_value_log_all)):
         test_results_csv_writer.writerow([round(return_value_log_all[i], 4),
                                      round(return_value_log_struct_all[i], 4),
-                                     round(return_value_var_reduction_all[i], 4),
+                                     round(return_value_var_reduction_all[i], 8),
                                      round(mae_all[i], 4),
                                      round(rmse_all[i], 4),
                                      leaves_number_all[i]])

@@ -43,7 +43,10 @@ def run():
     else:
         method = 'mcts'
 
-    opts.C_PUCT
+    if opts.C_PUCT is not None:
+        c_puct = float(opts.C_PUCT)
+    else:
+        c_puct = None
 
     if game_name == 'flappybird':
         model_name = 'FVAE-1000000'
@@ -107,7 +110,7 @@ def run():
                                         launch_time = opts.LAUNCH_TIME,
                                         data_type = 'latent',
                                         run_mcts=True,
-                                        c_puct=opts.C_PUCT)
+                                        c_puct=c_puct)
 
         if log_file is not None:
             log_file.close()

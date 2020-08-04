@@ -167,13 +167,16 @@ def write_data_text(data, writer):
 
 # do not run if called by another file
 if __name__ == '__main__':
-    game_name = 'Assault-v0'
+    game_name = 'SpaceInvaders-v0'
     image_type = 'latent'
     global_model_data_path = "/Local-Scratch/oschulte/Galen"
 
     if game_name == 'flappybird':
         model_name = 'FVAE-1000000'
         config_game_name = 'flappybird'
+    elif game_name == 'SpaceInvaders-v0':
+        model_name = 'FVAE-1000000'
+        config_game_name = "space_invaders_v0"
     elif game_name == 'Assault-v0':
         model_name = 'FVAE-1000000'
         config_game_name = 'assault_v0'

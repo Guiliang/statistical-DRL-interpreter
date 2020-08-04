@@ -459,6 +459,11 @@ class MimicLearner():
                                   'saved_nodes_action{1}_CPUCT0_1_2020-07-27/'.format(self.game_name, action_id)
             else:
                 raise ValueError("Unknown save model")
+        elif self.game_name == 'SpaceInvaders-v0' and action_id == 4:
+            if self.saved_model_c_puct == 0.001 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_001_2020-08-03/".format(self.game_name, action_id)
         elif self.game_name == 'flappybird' and action_id == 1:
             if self.saved_model_c_puct == 0.01:
                 saved_nodes_dir = self.global_model_data_path + \
