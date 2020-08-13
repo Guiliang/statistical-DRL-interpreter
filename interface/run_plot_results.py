@@ -1,7 +1,7 @@
 import csv
 import os
 import numpy as np
-
+import optparse
 cwd = os.getcwd()
 import sys
 
@@ -10,6 +10,12 @@ print(sys.path)
 from config.mimic_config import DRLMimicConfig
 from mimic_learner.learner import MimicLearner
 from utils.plot_utils import plot_values_by_node
+
+optparser = optparse.OptionParser()
+optparser.add_option("-d", "--log dir", dest="LOG_DIR", default=None,
+                     help="the dir of log")
+opts = optparser.parse_args()[0]
+
 
 def run_plot():
 
@@ -227,7 +233,13 @@ def run_generate_values():
         raise EnvironmentError("Unknown running setting, please set up your own environment")
 
     print('global path is : {0}'.format(global_model_data_path))
-    log_file = None
+    if opts.LOG_DIR is not None:
+        if os.path.exists(opts.LOG_DIR):
+            log_file =  open(opts.LOG_DIR, 'a')
+        else:
+            log_file = open(opts.LOG_DIR, 'w')
+    else:
+        log_file=None
 
     print("\nRunning for game {0} with {1}".format(game_name, method), file=log_file)
     mimic_learner = MimicLearner(game_name=game_name,
