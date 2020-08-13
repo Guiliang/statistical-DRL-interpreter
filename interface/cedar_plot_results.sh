@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --time=00:10:00
-#SBATCH --mem=2G
-#SBATCH --cpus-per-task=2
+#SBATCH --time=00:30:00
+#SBATCH --mem=4G
+#SBATCH --cpus-per-task=4
 #SBATCH --account=def-functor
 cd /home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/
 #virtualenv python3
