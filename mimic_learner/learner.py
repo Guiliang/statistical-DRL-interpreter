@@ -81,6 +81,9 @@ class MimicLearner():
         else:
             self.image_type = target
 
+        print_latent_total_number = 10
+        print_latent_iter = 0
+
         def gather_data_values(action_value):
             action_value_items = action_value.split(',')
             action_index = int(action_value_items[0])
@@ -141,6 +144,9 @@ class MimicLearner():
                     x_t1 = ttf.to_tensor(x_t1_resized).unsqueeze(0).to(self.dientangler.device)
                     z1 = self.dientangler.VAE.encode(x_t1).squeeze()[:self.z_dim]
                     z1 = z1.cpu().numpy()
+                if print_latent_iter < print_latent_total_number:
+                    print(z1)
+                    print_latent_iter += 1
                 # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
                 if action_index_t0 == action_id:
                     # print(len(self.memory))
