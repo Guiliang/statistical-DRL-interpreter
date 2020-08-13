@@ -24,14 +24,52 @@ def plot_decision_boundary(input_data, target_data, tree_model, plot_step = 0.02
     plt.ylabel("Latent dimension 5")
     plt.savefig('./decision_boundary.png')
 
-def plot_values_by_node(x_values_method_all, y_values_method_all, value_type, plotting_target, methods):
-    plt.figure()
+def plot_values_by_node(x_values_method_all, y_values_method_all, plotting_target, game_name, methods):
+    method_name_dict= {'cart-fvae': 'CART',
+                       'vr-lmt-fvae': 'VR-LMT',
+                       'gn-lmt-fave': 'GM-LMT',
+                       'mcts': 'MCTR'
+                       }
+    method_markers_dict = {
+        'cart-fvae': "o",
+        'vr-lmt-fvae': "v",
+        'gn-lmt-fave': "*",
+        'mcts': "X"
+    }
+
+    plt.figure(figsize=(8,6))
+    plt.xticks(size=15)
+    plt.yticks(size=15)
+
+    if plotting_target == 'Variance Reduction':
+        if game_name == 'SpaceInvaders-v0':
+            y_lim = [0, 0.012]
+            plt.ylim(y_lim)
+        elif game_name == 'flappybird':
+            y_lim = [0, 0.08]
+            plt.ylim(y_lim)
+        location = 'upper left'
+    elif plotting_target == 'MAE':
+        if game_name == 'SpaceInvaders-v0':
+            y_lim = [0.121, 0.1275]
+            plt.ylim(y_lim)
+        location = 'upper right'
+    elif plotting_target == 'RMSE':
+        location = 'upper right'
+        if game_name == 'SpaceInvaders-v0':
+            y_lim = [0.20, 0.23]
+            plt.ylim(y_lim)
+
     for method_index in range(len(x_values_method_all)):
-        plt.scatter(x_values_method_all[method_index], y_values_method_all[method_index], label=methods[method_index])
+        plt.scatter(x_values_method_all[method_index], y_values_method_all[method_index],
+                    label=method_name_dict[methods[method_index]],
+                    marker=method_markers_dict[methods[method_index]],
+                    s=120)
         plt.plot(x_values_method_all[method_index], y_values_method_all[method_index])
-    plt.xlabel("The Number of Leaves")
-    plt.ylabel(value_type)
-    plt.legend()
-    plt.savefig('../results/plot_results/{0}_{1}_by_node.png'.format(value_type, plotting_target))
+    plt.xlabel("The Number of Leaves", fontsize=18)
+    plt.ylabel(plotting_target, fontsize=18)
+    plt.legend(fontsize=15, loc=location)
+    plt.grid(linestyle='dotted')
+    plt.savefig('../results/plot_results/{0}_{1}_by_node.png'.format(plotting_target, game_name))
 
 

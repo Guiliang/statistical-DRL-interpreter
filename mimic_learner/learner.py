@@ -225,12 +225,12 @@ class MimicLearner():
 
         return selected_binary_node_index, img_id
 
-    def predict_mcts(self, data, action_id, saved_nodes_dir, log_file, visualize_flag=False):
+    def predict_mcts(self, data, action_id, saved_nodes_dir, log_file, visualize_flag=False, feature_importance_flag=False):
         self.mimic_env.assign_data(data)
         init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
         moved_nodes = test_mcts(saved_nodes_dir=saved_nodes_dir, TreeEnv=self.mimic_env, action_id=action_id)
         return self.generate_prediction_results(init_state, init_var_list, moved_nodes,
-                                                self.binary_max_node, log_file, visualize_flag)
+                                                self.binary_max_node, log_file, visualize_flag, feature_importance_flag)
 
     def predict_mcts_by_splits(self, action_id, saved_nodes_dir):
         init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
@@ -244,7 +244,8 @@ class MimicLearner():
         for node_index in range(0, len(moved_nodes)):
             return_value_log, return_value_log_struct, return_value_var_reduction, mae, rmse, leaves_number = \
                 self.generate_prediction_results(init_state, init_var_list, moved_nodes,
-                                                 node_index, log_file=None, visualize_flag=False)
+                                                 node_index, log_file=None, visualize_flag=False,
+                                                 feature_importance_flag=False)
             return_value_log_all.append(return_value_log)
             return_value_log_struct_all.append(return_value_log_struct)
             return_value_var_reduction_all.append(return_value_var_reduction)
@@ -254,12 +255,17 @@ class MimicLearner():
         return return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
                mae_all, rmse_all, leaves_number_all
 
-    def generate_prediction_results(self, init_state, init_var_list, moved_nodes, max_node, log_file, visualize_flag):
+    def generate_prediction_results(self, init_state, init_var_list, moved_nodes, max_node, log_file,
+                                    visualize_flag, feature_importance_flag):
         parent_state = init_state
         state = init_state
+        total_data_length = len(state[0])
         parent_var_list = init_var_list
         root_binary = BinaryTreeNode(state=init_state[0], level=0, prediction=moved_nodes[0].state_prediction[0])
         binary_node_index = [root_binary]
+
+        if feature_importance_flag:
+            feature_importance_all = {}
 
         for moved_node in moved_nodes[:max_node]:
             selected_action = moved_node.action
@@ -281,11 +287,40 @@ class MimicLearner():
                 binary_node_index.insert(split_index, split_binary_node.left_child)
                 binary_node_index.insert(split_index+1, split_binary_node.right_child)
 
+                if feature_importance_flag:
+                    feature_dim = selected_action.split('_')[1]
+                    parent_impacts = []
+                    for index in split_binary_node.state:
+                        parent_impacts.append(self.mimic_env.data_all[index][-1])
+                    parent_var = np.var(parent_impacts)
+
+                    left_child_impacts = []
+                    for index in state[split_index]:
+                        left_child_impacts.append(self.mimic_env.data_all[index][-1])
+                    left_child_var = np.var(left_child_impacts)
+
+                    right_child_impacts = []
+                    for index in state[split_index+1]:
+                        right_child_impacts.append(self.mimic_env.data_all[index][-1])
+                    right_child_var = np.var(right_child_impacts)
+
+                    var_reduction = float(len(split_binary_node.state))/total_data_length*parent_var - \
+                                    float(len(state[split_index]))/total_data_length*left_child_var-\
+                                    float(len(state[split_index+1]))/total_data_length*right_child_var
+
+                    if feature_importance_all.get(feature_dim) is not None:
+                        feature_importance_all[feature_dim] += var_reduction
+                    else:
+                        feature_importance_all.update({feature_dim:var_reduction})
+
         binary_states = []
         binary_predictions = [None for i in range(len(self.mimic_env.data_all))]
 
         if  visualize_flag:
             self.iterative_read_binary_tree(root_binary, log_file, visualize_flag=visualize_flag)
+        if feature_importance_flag:
+            print(feature_importance_all)
+
         selected_binary_node_index = binary_node_index
 
         # state_predictions = []
@@ -339,7 +374,8 @@ class MimicLearner():
             saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
-                 = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=False)
+                 = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=False,
+                                     feature_importance_flag=False)
             # return_value, mae, rmse, leaves_number = [None, None, None, None]
         elif self.method == 'cart-fvae':
             self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
@@ -464,6 +500,22 @@ class MimicLearner():
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   "saved_nodes_action{1}_CPUCT0_001_2020-08-03/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0.005 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_005_2020-08-04/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_01_2020-08-04/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0 and self.play_number == 2:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_0_2020-08-10/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0.0005 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_0005_2020-08-11/".format(self.game_name, action_id)
         elif self.game_name == 'flappybird' and action_id == 1:
             if self.saved_model_c_puct == 0.01:
                 saved_nodes_dir = self.global_model_data_path + \
@@ -481,7 +533,7 @@ class MimicLearner():
         return saved_nodes_dir
 
     def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type,
-                          run_mcts=False, c_puct=None):
+                          run_mcts=False, c_puct=None, play=None):
         # mcts_file_name = None
         return_value_log = None
         if self.method == 'mcts':
@@ -505,13 +557,15 @@ class MimicLearner():
                                        shell_round_number= shell_round_number,
                                        shell_saved_model_dir = shell_saved_model_dir,
                                        log_file = log_file,
-                                       apply_split_parallel=True)
+                                       apply_split_parallel=True,
+                                       play=play)
                 return_value, mae, rmse, leaves_number = [None, None, None, None]
             else:
                 saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
                 return_value_log, return_value_log_struct, \
                 return_value_var_reduction, mae, rmse, leaves_number \
-                    = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=True)
+                    = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=True,
+                                        feature_importance_flag=True)
         elif self.method == 'cart-fvae':
             self.data_loader(episode_number=4, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)

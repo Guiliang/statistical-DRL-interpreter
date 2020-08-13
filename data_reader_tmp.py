@@ -168,7 +168,7 @@ def write_data_text(data, writer):
 # do not run if called by another file
 if __name__ == '__main__':
     game_name = 'SpaceInvaders-v0'
-    image_type = 'latent'
+    image_type = 'origin'
     global_model_data_path = "/Local-Scratch/oschulte/Galen"
 
     if game_name == 'flappybird':
@@ -192,13 +192,13 @@ if __name__ == '__main__':
     dientangler = Disentanglement(mimic_config, 'FVAE', False, global_model_data_path)
     dientangler.load_checkpoint(ckptname= model_name, testing_flag=True, log_file=None)
 
-    for aid in [2, 3, 4]:
+    for aid in [4]:
         data_save_dir = '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
 
         training_data_action = data_loader(episode_number=4, action_id=aid,
                                            data_save_dir=data_save_dir,
                                            dientangler=dientangler,
-                                           image_type='latent',
+                                           image_type=image_type,
                                            game_name = game_name,
                                            iteration_number=0)
 
@@ -207,15 +207,15 @@ if __name__ == '__main__':
         testing_data_action = data_loader(episode_number=45.5, action_id=aid,
                                           data_save_dir=data_save_dir,
                                           dientangler=dientangler,
-                                          image_type='latent',
+                                          image_type=image_type,
                                           game_name = game_name,
                                           iteration_number=iteration_number)
 
         # create training and testing files
-        impact_file_name_training = 'impact_training_{0}_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
+        impact_file_name_training = 'impact_training_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
         impact_file_Writer_training = open('./LMUT_data/' + impact_file_name_training, 'w')
 
-        impact_file_name_testing = 'impact_testing_{0}_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
+        impact_file_name_testing = 'impact_testing_data_{1}_action_{2}.csv'.format(image_type, game_name, aid)
         impact_file_Writer_testing = open('./LMUT_data/' + impact_file_name_testing, 'w')
 
         print('Writing training csv for action {}...'.format(aid))

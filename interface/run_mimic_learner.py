@@ -24,6 +24,8 @@ optparser.add_option("-l", "--launch time", dest="LAUNCH_TIME", default=None,
                      help="the time we launch this program")
 optparser.add_option("-c", "--cpuct", dest="C_PUCT", default=None,
                      help="cpuct")
+optparser.add_option("-p", "--play", dest="PLAY", default=None,
+                     help="play number")
 # optparser.add_option("-d", "--dir of just saved mcts", dest="MCTS_DIR", default=None,
 #                      help="dir of just saved mcts (default = None)")
 opts = optparser.parse_args()[0]
@@ -42,6 +44,11 @@ def run():
         method = opts.METHOD_NAME
     else:
         method = 'mcts'
+
+    if opts.PLAY is not None:
+        play = int(opts.PLAY)
+    else:
+        play = None
 
     if opts.C_PUCT is not None:
         c_puct = float(opts.C_PUCT)
@@ -110,7 +117,8 @@ def run():
                                         launch_time = opts.LAUNCH_TIME,
                                         data_type = 'latent',
                                         run_mcts=True,
-                                        c_puct=c_puct)
+                                        c_puct=c_puct,
+                                        play=play)
 
         if log_file is not None:
             log_file.close()

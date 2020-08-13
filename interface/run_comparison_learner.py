@@ -15,8 +15,8 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    game_name = 'SpaceInvaders-v0'
-    method = 'm5-rt'
+    game_name = 'flappybird'
+    method = 'cart-fvae'
 
     if game_name == 'Assault-v0':
         action_ids = [2]  # {0: 118, 1: 165, 2: 1076, 3: 1293, 4: 1246, 5: 50, 6: 52}
@@ -35,7 +35,7 @@ def run():
 
     if method == 'mcts':
         options_dict = {
-            'flappybird':['max_node', 10, 'cpuct', 0.02, 'play_number', 1000],
+            'flappybird':['max_node', 60, 'cpuct', 0.01, 'play_number', 1000],
             # 'Assault-v0':[]
         }
         action_ids = [0]
@@ -44,21 +44,21 @@ def run():
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
             'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mae', 'random', 'min_samples_leaf', 2],
-            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10],
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mae', 'best', 'min_samples_leaf',4],
         }
         data_type = 'binary'
     elif method == 'cart-fvae':
         options_dict = {
-            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10],
+            'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 17],
             'Assault-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
-            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 10]
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 9]
         }
         data_type = 'latent'
     elif method == 'm5-rt':  # m5 regression tree
         options_dict = {
             'flappybird': ["-R", "-N", "-M", "1"],
             'Assault-v0': ["-R", "-N", "-M", "20"],
-            'SpaceInvaders-v0': ["-R", "-N", "-M", "1"]
+            'SpaceInvaders-v0': ["-R", "-N", "-M", "4"]
         }
         data_type = 'color'
         # options = ["-R"]
@@ -66,7 +66,8 @@ def run():
         # options = ["-M", "10"]
         options_dict = {
             'flappybird':["-N", "-M", "25"],
-            'Assault-v0':["-N", "-M", "25"]
+            'Assault-v0':["-N", "-M", "25"],
+            'SpaceInvaders-v0': ["-N", "-M", "5"]
         }
         data_type = 'color'
     else:

@@ -16,11 +16,20 @@ from mimic_learner.learner import MimicLearner
 def run_plot():
 
 
-    plotting_target = 'var_reduction'
-    game_name = 'flappybird'
+    plotting_target = 'Variance Reduction'  # Variance Reduction, MAE, RMSE
+    game_name = 'SpaceInvaders-v0'
+    # game_name = 'flappybird'
 
     if game_name == 'flappybird':
         action_ids = [0]
+        methods = [
+            "cart-fvae",
+            "vr-lmt-fvae",
+            'gn-lmt-fave',
+            "mcts"
+        ]
+    elif game_name == 'SpaceInvaders-v0':
+        action_ids = [4]
         methods = [
             "cart-fvae",
             "vr-lmt-fvae",
@@ -36,30 +45,65 @@ def run_plot():
     for method in methods:
         var_reduction_all = {}
         rmse_all = {}
+        mae_all = {}
         for action in action_ids:
             if game_name == 'flappybird':
                 if method == 'cart-fvae':
                     # if plotting_target == 'var_reduction':
-                    plot_results_path = '../results/plot_results/' \
+                    plot_results_path = '../results/plot_results/flappybird/' \
                                         'testing-flappybird-action0-by-splits-' \
                                         'results-cart-fvae-max_leaf_nodes-None-' \
                                         'criterion-mae-best-min_samples_leaf-1.txt'.format(action)
 
                 elif method == 'vr-lmt-fvae':
                     # if plotting_target == 'var_reduction':
-                    plot_results_path = '../results/plot_results/' \
+                    plot_results_path = '../results/plot_results/flappybird/' \
                                         'testing_tree_impact_training_latent_data' \
-                                        '_flappybird_action_{0}_minInst10_regul0.1_bin25_minQ0_splitm3'.format(action)
+                                        '_flappybird_action_{0}_minInst10_regul0.8_bin25_minQ0_splitm3'.format(action)
                 elif method == 'gn-lmt-fave':
                     # if plotting_target == 'var_reduction':
-                    plot_results_path = '../results/plot_results/' \
+                    plot_results_path = '../results/plot_results/flappybird/' \
                                         'testing_tree_impact_training_latent_data' \
                                         '_flappybird_action_{0}_minInst10_regul1_bin100_minQ0.01_splitm1'.format(action)
                 elif method == 'mcts':
-                    cpuct = 0.01
-                    play_number = 1000
-                    plot_results_path = '../results/plot_results/' \
+                    if  plotting_target == 'MAE':
+                        cpuct = 0.1
+                        play_number = 200
+                    elif plotting_target == 'RMSE':
+                        cpuct = 0.1
+                        play_number = 200
+                    else:
+                        cpuct = 0.01
+                        play_number = 1000
+                    plot_results_path = '../results/plot_results/flappybird/' \
                                         'testing-flappybird-action{0}-by-splits' \
+                                        '-results-mcts-max_node-None-cpuct-{1}-play-{2}.txt'.format(action,
+                                                                                                    cpuct,
+                                                                                                    play_number)
+
+            elif game_name == 'SpaceInvaders-v0':
+                if method == 'cart-fvae':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/SpaceInvaders-v0/' \
+                                        'training-SpaceInvaders-v0-action4-' \
+                                        'by-splits-results-cart-fvae-max_leaf_nodes-None-' \
+                                        'criterion-mse-best-min_samples_leaf-3.txt'.format()
+
+                elif method == 'vr-lmt-fvae':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/SpaceInvaders-v0/' \
+                                        'training_tree_impact_training_latent_data_' \
+                                        'SpaceInvaders-v0_action_4_minInst10_regul0.005_bin5_minQ0.01_splitm3'.format()
+                elif method == 'gn-lmt-fave':
+                    # if plotting_target == 'var_reduction':
+                    plot_results_path = '../results/plot_results/SpaceInvaders-v0/' \
+                                        'training_tree_impact_training_latent_data_' \
+                                        'SpaceInvaders-v0_action_4_minInst10_regul0.001_bin5_minQ0.01_splitm1'.format()
+                elif method == 'mcts':
+                    cpuct = 0.001
+                    play_number = 200
+                    plot_results_path = '../results/plot_results/SpaceInvaders-v0/' \
+                                        'training-SpaceInvaders-v0-action{0}-by-splits' \
                                         '-results-mcts-max_node-None-cpuct-{1}-play-{2}.txt'.format(action,
                                                                                                     cpuct,
                                                                                                     play_number)
@@ -84,21 +128,26 @@ def run_plot():
                 leaves = float(leaves.replace('\n',''))
                 var_reduction = float(var_reduction)
                 rmse = float(rmse)
+                mae = float(mae)
                 if var_reduction_all.get(leaves) is None:
                     var_reduction_all.update({leaves:[var_reduction]})
                     rmse_all.update({leaves:[rmse]})
+                    mae_all.update({leaves: [mae]})
                 else:
                     var_reduction_all[leaves].append(var_reduction)
                     rmse_all[leaves].append(rmse)
+                    mae_all[leaves].append(mae)
 
             plot_x_values  = []
             plot_y_values = []
             for leaf_node in range(1, 31, 1):
                 plot_x_values.append(leaf_node)
-                if plotting_target == 'var_reduction':
+                if plotting_target == 'Variance Reduction':
                     plot_y_values.append(var_reduction_all[leaf_node])
-                elif plotting_target == 'rmse':
+                elif plotting_target == 'RMSE':
                     plot_y_values.append(rmse_all[leaf_node])
+                elif plotting_target == 'MAE':
+                    plot_y_values.append(mae_all[leaf_node])
                 assert len(plot_y_values[-1]) == len(action_ids)
 
             plot_y_values = np.asarray(plot_y_values).mean(axis=1)
@@ -106,8 +155,8 @@ def run_plot():
             plot_y_values_all.append(plot_y_values)
 
     plot_values_by_node(plot_x_values_all, plot_y_values_all,
-                        value_type=plotting_target,
-                        plotting_target = game_name,
+                        plotting_target=plotting_target,
+                        game_name = game_name,
                         methods=methods)
 
 
@@ -137,12 +186,12 @@ def run_generate_values():
     if method == 'mcts':
         options_dict = {
             'flappybird':['max_node', None, 'cpuct', 0.1, 'play', 200],
-            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.001, 'play', 200],
+            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.005, 'play', 200],
         }
     elif method == 'cart-fvae':
         options_dict = {
             'flappybird': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
-            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 20],
+            'SpaceInvaders-v0': ['max_leaf_nodes', None, 'criterion', 'mse', 'best', 'min_samples_leaf', 3],
         }
     elif method == 'cart':
         options_dict = {
@@ -218,7 +267,7 @@ def run_generate_values():
             data_output = mimic_learner.memory[data_index][4]
             training_data[0].append(data_input)
             training_data[1].append(data_output)
-        for i in range(2, 61):
+        for i in range(2, 301):
             save_model_dir = mimic_learner.global_model_data_path + '/DRL-interpreter-model/comparison' \
                                                                     '/cart/{0}/{1}-aid{2}-node{3}' \
                                                                     '-sklearn.model'.format(mimic_learner.game_name,
@@ -246,7 +295,7 @@ def run_generate_values():
     for i in range(j, len(return_value_log_all)):
         train_results_csv_writer.writerow([round(return_value_log_all[i], 4),
                                      round(return_value_log_struct_all[i], 4),
-                                     round(return_value_var_reduction_all[i], 4),
+                                     round(return_value_var_reduction_all[i], 8),
                                      round(mae_all[i], 4),
                                      round(rmse_all[i], 4),
                                      leaves_number_all[i]])
@@ -279,7 +328,7 @@ def run_generate_values():
             testing_data[0].append(data_input)
             testing_data[1].append(data_output)
         testing_data[0] = np.stack(testing_data[0], axis=0)
-        for i in range(2, 61):
+        for i in range(2, 301):
             save_model_dir = mimic_learner.global_model_data_path + '/DRL-interpreter-model/comparison' \
                                                                     '/cart/{0}/{1}-aid{2}-node{3}' \
                                                                     '-sklearn.model'.format(mimic_learner.game_name,

@@ -1,4 +1,10 @@
 scp -r /Local-Scratch/PycharmProjects/statistical-DRL-interpreter/LMUT_data/* functor@cedar.computecanada.ca:/home/functor/scratch/xiangyus/LMUT/csv_files/flappybird/
+
 scp -r /Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/Assault-v0 functor@cedar.computecanada.ca:/home/functor/scratch/Galen/project-DRL-Interpreter/DRL-interpreter-model/data/
+
+scp -r functor@cedar.computecanada.ca:/home/functor/scratch/Galen/project-DRL-Interpreter/DRL-interpreter-model/MCTS/SpaceInvaders-v0/saved_nodes_action4_CPUCT0_005_2020-08-03 ./
+
+scp functor@cedar.computecanada.ca:/home/functor/scratch/Galen/project-DRL-Interpreter/statistical-DRL-interpreter/interface/SpaceInvaders-v0-output-single-cput0.01-play200-action4-2020-8-04.out ./
+
 ssh functor@cedar.computecanada.ca
 tEMJod28FEvePA

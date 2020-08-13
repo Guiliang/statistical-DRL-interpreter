@@ -1334,12 +1334,15 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                            mcts_saved_dir, max_k, init_state,
                            init_var_list, action_id, ignored_dim,
                            shell_round_number, shell_saved_model_dir, log_file,
-                           apply_split_parallel=False, save_gap=2):
+                           apply_split_parallel=False, save_gap=2, play=None):
     pid = os.getpid()
     process = psutil.Process(pid)  # supervise the usage of memory
 
     next_end_flag = False
-    simulations_per_round = 200 # 1000
+    if play is None:
+        simulations_per_round = 200 # 1000
+    else:
+        simulations_per_round = play
     if apply_split_parallel:
         global SPLIT_POOL
         global PROCESS_NUMBER
