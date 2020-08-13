@@ -1101,6 +1101,26 @@ class MCTS:
                              ignored_dim=root.ignored_dim)
         save_node.state_prediction = state_prediction
         save_node.child_N = root.child_N
+
+        tree_predictions = [None for i in range(len(TreeEnv.data_all))]
+        for subset_index in range(len(save_node.state)):
+            subset = save_node.state[subset_index]
+            for data_index in subset:
+                tree_predictions[data_index] = save_node.state_prediction[subset_index]
+        ae_all = []
+        se_all = []
+        for data_index in range(len(tree_predictions)):
+            if tree_predictions[data_index] is not None:
+                real_value = TreeEnv.data_all[data_index][-1]
+                predicted_value = tree_predictions[data_index]
+                ae = abs(real_value-predicted_value)
+                ae_all.append(ae)
+                mse = ae**2
+                se_all.append(mse)
+        mae = np.mean(ae_all)
+        mse = np.mean(se_all)
+        rmse = (mse)**0.5
+
         print("The children of root is {0}".format(root.children), file=log_file)
         with open(saved_nodes_dir+'/node_counter_{0}_{1}.pkl'
                 .format(round_counter, datetime.today().strftime('%Y-%m-%d-%H')), 'wb') as f:
@@ -1111,9 +1131,11 @@ class MCTS:
         print("Deep copy total memory usage is {0} at {1}".format(mme_a, datetime.now().strftime('%Y-%m-%d %H:%M:%S')), file=log_file)
 
         return_value = self.TreeEnv.get_return(self.root.state, self.root.depth, is_training=True)
+
+
         self.rewards.append(return_value)
         print("Moving from level {0} with var {1} to level {2} with var {3} by taking "
-              "action: {4}, prob: {5}, Q: {6} and reward: {7}".format(
+              "action: {4}, prob: {5}, Q: {6} and return: {7}, rmse:{8}, mae:{9}".format(
             root.level,
             root.var_list,
             self.root.level,
@@ -1122,6 +1144,8 @@ class MCTS:
             self.searches_pi[-1],
             self.qs[-1],
             self.rewards[-1],
+            rmse,
+            mae
         ), file = log_file)
 
 

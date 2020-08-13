@@ -190,7 +190,7 @@ def run_generate_values():
     if method == 'mcts':
         options_dict = {
             'flappybird':['max_node', None, 'cpuct', 0.1, 'play', 200],
-            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.005, 'play', 200],
+            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.001, 'play', 200],
         }
     elif method == 'cart-fvae':
         options_dict = {
@@ -255,7 +255,8 @@ def run_generate_values():
     train_results_csv_writer.writerow(['return_value_log', 'return_value_log_struct', 'return_value_var_reduction',
                                  'mae', 'rmse', 'leaves'])
     if method == 'mcts':
-        mimic_learner.data_loader(episode_number=4, target="latent", action_id=action_id)
+        # mimic_learner.data_loader(episode_number=4, target="latent", action_id=action_id)
+        mimic_learner.mcts_static_data_loader(action_id, log_file, training_flag=True)
         mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         saved_nodes_dir = mimic_learner.get_MCTS_nodes_dir(action_id)
         return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
@@ -315,7 +316,8 @@ def run_generate_values():
                                  'mae', 'rmse', 'leaves'])
 
     if method == 'mcts':
-        mimic_learner.data_loader(episode_number=45.5, target="latent", action_id=action_id)
+        mimic_learner.mcts_static_data_loader(action_id, log_file=log_file, training_flag=False)
+        # mimic_learner.data_loader(episode_number=45.5, target="latent", action_id=action_id)
         mimic_learner.mimic_env.assign_data(mimic_learner.memory)
         saved_nodes_dir = mimic_learner.get_MCTS_nodes_dir(action_id)
         return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \

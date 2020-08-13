@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime
 import ast
 import os
@@ -70,6 +71,33 @@ class MimicLearner():
 
         self.shell_saved_model_dir = self.global_model_data_path + self.mcts_saved_dir
 
+    def mcts_static_data_loader(self, action_id, log_file, training_flag=True):
+        print("Reading from static data", file=log_file)
+
+        self.memory = []
+        cwd = os.getcwd()
+        read_training_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                 'impact_training_latent_data_' \
+                                                                 '{0}_action_{1}.csv'.format(self.game_name, action_id)
+
+        read_testing_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                'impact_testing_latent_data_' \
+                                                                '{0}_action_{1}.csv'.format(self.game_name, action_id)
+
+        if training_flag:
+            read_data_dir = read_training_data_dir
+        else:
+            read_data_dir = read_testing_data_dir
+        skip_line = True
+        with open(read_data_dir, 'r') as csvfile:
+            csv_read_line = csv.reader(csvfile)
+            for row in csv_read_line:
+                if skip_line:
+                    skip_line = False
+                    continue
+                impact = float(row[0])
+                z0 = np.asarray([float(i) for i in row[1:]])
+                self.memory.append([z0, action_id, None, None, impact])
 
 
     def data_loader(self, episode_number, target, action_id):
@@ -145,7 +173,7 @@ class MimicLearner():
                     z1 = self.dientangler.VAE.encode(x_t1).squeeze()[:self.z_dim]
                     z1 = z1.cpu().numpy()
                 if print_latent_iter < print_latent_total_number:
-                    print(z1)
+                    # print(z0)
                     print_latent_iter += 1
                 # self.memory.add(delta, (z0, action_index_t0, reward_t0, z1, delta))
                 if action_index_t0 == action_id:
@@ -376,7 +404,8 @@ class MimicLearner():
         self.iteration_number = int(self.episodic_sample_number * 45) # the last 5k(/50k) is for testing
 
         if self.method == 'mcts':
-            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
+            self.mcts_static_data_loader(action_id, log_file=log_file, training_flag=False)
+            # self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
             saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
@@ -543,7 +572,8 @@ class MimicLearner():
         # mcts_file_name = None
         return_value_log = None
         if self.method == 'mcts':
-            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            # self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.mcts_static_data_loader(action_id, log_file=log_file, training_flag=True)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             if run_mcts:
@@ -653,6 +683,10 @@ class MimicLearner():
             print(results_str, file=log_file)
             return return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number, results_str
+
+
+
+
 
 class BinaryTreeNode():
     def __init__(self, state, level, prediction):
