@@ -2,8 +2,6 @@ import csv
 import os
 import numpy as np
 
-from utils.plot_utils import plot_values_by_node
-
 cwd = os.getcwd()
 import sys
 
@@ -11,7 +9,7 @@ sys.path.append(cwd.replace('/interface', ''))
 print(sys.path)
 from config.mimic_config import DRLMimicConfig
 from mimic_learner.learner import MimicLearner
-
+from utils.plot_utils import plot_values_by_node
 
 def run_plot():
 
