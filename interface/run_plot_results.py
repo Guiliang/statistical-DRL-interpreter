@@ -190,7 +190,7 @@ def run_generate_values():
     if method == 'mcts':
         options_dict = {
             'flappybird':['max_node', None, 'cpuct', 0.1, 'play', 200],
-            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.005, 'play', 200],
+            'SpaceInvaders-v0': ['max_node', None, 'cpuct', 0.01, 'play', 200],
         }
     elif method == 'cart-fvae':
         options_dict = {

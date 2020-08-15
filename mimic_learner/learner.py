@@ -538,11 +538,11 @@ class MimicLearner():
             if self.saved_model_c_puct == 0.005 and self.play_number == 200:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_005_2020-08-04/".format(self.game_name, action_id)
+                                  "saved_nodes_action{1}_CPUCT0_005_2020-08-13/".format(self.game_name, action_id)
             if self.saved_model_c_puct == 0.01 and self.play_number == 200:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_01_2020-08-04/".format(self.game_name, action_id)
+                                  "saved_nodes_action{1}_CPUCT0_01_2020-08-14/".format(self.game_name, action_id)
             if self.saved_model_c_puct == 0 and self.play_number == 2:
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
@@ -551,6 +551,14 @@ class MimicLearner():
                 saved_nodes_dir = self.global_model_data_path + \
                                   "/DRL-interpreter-model/MCTS/{0}/" \
                                   "saved_nodes_action{1}_CPUCT0_0005_2020-08-11/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0.003 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_003_2020-08-13/".format(self.game_name, action_id)
+            if self.saved_model_c_puct == 0.008 and self.play_number == 200:
+                saved_nodes_dir = self.global_model_data_path + \
+                                  "/DRL-interpreter-model/MCTS/{0}/" \
+                                  "saved_nodes_action{1}_CPUCT0_008_2020-08-14/".format(self.game_name, action_id)
         elif self.game_name == 'flappybird' and action_id == 1:
             if self.saved_model_c_puct == 0.01:
                 saved_nodes_dir = self.global_model_data_path + \
@@ -580,7 +588,8 @@ class MimicLearner():
                 if c_puct is not None:
                     mcts.c_PUCT = c_puct
                 mcts_saved_dir = self.global_model_data_path + self.mcts_saved_dir
-                shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved_action{0}_{1}.pkl'.format(action_id, launch_time)
+                shell_saved_model_dir = mcts_saved_dir+'_tmp_shell_saved_action{0}_CPUCT{1}' \
+                                                       '_play{2}_{3}.pkl'.format(action_id, c_puct, play, launch_time)
                 execute_episode_single(num_simulations=self.num_simulations,
                                        TreeEnv=self.mimic_env,
                                        tree_writer=None,
