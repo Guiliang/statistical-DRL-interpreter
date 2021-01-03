@@ -19,7 +19,7 @@ class CARTRegressionTree():
                                            criterion= self.criterion,
                                            splitter=self.mode,
                                            min_samples_leaf=self.min_samples_leaf,
-                                           # max_features = 500
+                                           # max_features = 9
                                            )
         self.model.fit(training_data[0], training_data[1])
         # self.print_tree()

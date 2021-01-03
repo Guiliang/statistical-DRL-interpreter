@@ -11,21 +11,32 @@ import math
 from torch import nn
 from torch.nn import Parameter
 from torchvision.utils import save_image
-from utils.general_utils import mkdirs
 
 
 # import numpy as np
 # import cv2
 
+def prediction_loss(y_predict, y_true):
+    mse = nn.MSELoss(reduction='mean')
+    loss = mse(y_predict, y_true)
+    return loss
 
-def recon_loss(x, x_recon):
+def recon_loss(x, x_recon, if_cross_entropy=True):
     n = x.size(0)
-    loss = F.binary_cross_entropy_with_logits(x_recon, x, size_average=False).div(n)
+    if if_cross_entropy:
+        loss = F.binary_cross_entropy_with_logits(x_recon, x, size_average=False).div(n)
+    else:
+        mse = nn.MSELoss(reduction='mean')
+        loss = mse(x_recon, x)
     return loss
 
 
-def kl_divergence(mu, logvar):
-    kld = -0.5 * (1 + logvar - mu ** 2 - logvar.exp()).sum(1).mean()
+def kl_divergence(mu_q, logvar_q, mu_p=None, logvar_p=None):
+    if mu_p is None and logvar_p is None:
+        kld = -0.5 * (1 + logvar_q - mu_q ** 2 - logvar_q.exp()).sum(1).mean()
+    else:
+        kld = 0.5 * (logvar_p - logvar_q +
+                     (logvar_q.exp() + (mu_q - mu_p)**2) / logvar_p.exp() - 1).sum(1).mean()
     return kld
 
 def tree_construct_loss(leaf_number):
@@ -196,9 +207,10 @@ def compute_latent_importance(gif_tensor, sample_dimension,
                     image_number += 1
 
         # print('Sum Diff of dim {0} is {1}'.format(str(k), image_dim_diff_sum.sum().numpy()))
-        image_dim_diff_average = image_dim_diff_sum[0]/image_number
+        # image_dim_diff_average = image_dim_diff_sum[0]/image_number
+        image_dim_diff_average = torch.mean(image_dim_diff_sum, 0, keepdim=False) / image_number
         dim_diff_dict.update({k: np.sum(image_dim_diff_average.numpy())})
-        image_dim_mask = image_dim_diff_average > 0.1
+        image_dim_mask = image_dim_diff_average > 0.045
         # tmp = torch.ones(image_dim_mask.size()) - image_dim_mask.double()
         # tmp=tmp.numpy()
         # print(tmp)
@@ -344,7 +356,7 @@ def visualize_split(selected_action, state, data_all, decoder, device, z_dim, im
         # z_2_state = build_decode_input(state_features_avg[z_dim:])
         # z_state = torch.cat([z_1_state, z_2_state], axis=0)
         with torch.no_grad():
-            x_recon = F.sigmoid(decoder(z_state.to(device))).data
+            x_recon = F.sigmoid(decoder(z_state.float().to(device))).data
 
         if x_recon_all is None:
             x_recon_all = x_recon
@@ -361,7 +373,70 @@ def visualize_split(selected_action, state, data_all, decoder, device, z_dim, im
     save_image(tensor=masked_images[1], fp="../mimic_learner/action_images_plots/img_{0}_split_{1}_image_right.jpg".
                format(image_id, selected_action), nrow=1, pad_value=1)
 
+
+def generate_attention_maps():
+    img = Image.open('../tmp/flappybird-example.png')
+    img_np = np.array(img)
+    # img_np.setflags(write=1)
+    # img = Image.fromarray(np.uint8(img_np))
+    # img.show()
+    tmp_img_np = img_np[:,:,0]
+
+    # tmp = tmp_img_np[:, 150]
+    # for i in tmp:
+    #     print(i)
+
+    map_list = [gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=10, sigma_y=10, x0=130, y0=260),
+                gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=10, sigma_y=10, x0=140, y0=250),
+                gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=8, sigma_y=8, x0=160, y0=260),
+                gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=10, sigma_y=8, x0=150, y0=280),
+
+                3*gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=30, sigma_y=10, x0=180, y0=127),
+                # gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=10, sigma_y=10, x0=185, y0=127),
+                gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=12, sigma_y=9, x0=195, y0=127),
+                0.2*gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=8, sigma_y=5, x0=170, y0=120),
+
+                3 * gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=25, sigma_y=15, x0=173, y0=330),
+                gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=12, sigma_y=9, x0=155, y0=335),
+                0.2 * gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=7, sigma_y=4, x0=150, y0=325),
+                0.01 * gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=3, sigma_y=3, x0=153, y0=327),
+                0.1 * gauss_map(img_np.shape[1], img_np.shape[0], sigma_x=3, sigma_y=3, x0=140, y0=330),
+                ]
+
+    map_all = np.zeros([img_np.shape[0], img_np.shape[1]])
+
+    for map in map_list:
+        map_all += map
+
+    map_all = 255*map_all/(np.max(map_all)-np.min(map_all))
+    img_np[:, :, 1] = tmp_img_np*0.5 + map_all*0.5
+    img = Image.fromarray(np.uint8(img_np))
+    img.show()
+    # img.save('./flappybird-attentions.png')
+
+
+def gauss_map(size_x, size_y=None, sigma_x=5, sigma_y=None, x0=None, y0=None):
+    if size_y == None:
+        size_y = size_x
+    if sigma_y == None:
+        sigma_y = sigma_x
+
+    assert isinstance(size_x, int)
+    assert isinstance(size_y, int)
+
+    if x0 is None:
+        x0 = size_x // 2
+    if y0 is None:
+        y0 = size_y // 2
+
+    x = np.arange(0, size_x, dtype=float)
+    y = np.arange(0, size_y, dtype=float)[:, np.newaxis]
+
+    x -= x0
+    y -= y0
+
+    exp_part = x ** 2 / (2 * sigma_x ** 2) + y ** 2 / (2 * sigma_y ** 2)
+    return 1 / (2 * np.pi * sigma_x * sigma_y) * np.exp(-exp_part)
+
 if __name__ == "__main__":
-    for l in range(2, 60):
-        structure_cost = tree_construct_loss(leaf_number=float(l))
-        print(structure_cost)
+    generate_attention_maps()

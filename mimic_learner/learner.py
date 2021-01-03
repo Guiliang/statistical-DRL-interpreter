@@ -16,6 +16,7 @@ from data_disentanglement.disentanglement import Disentanglement
 from PIL import Image
 import torchvision.transforms.functional as ttf
 from mimic_learner.comparsion_learners.cart import CARTRegressionTree
+from utils.general_utils import gather_data_values
 
 from utils.model_utils import visualize_split, build_decode_input
 
@@ -49,11 +50,17 @@ class MimicLearner():
             self.mimic_model = None
 
         if self.method == 'mcts' or self.method == 'cart-fvae':
-            self.ignored_dim = ast.literal_eval(config.Mimic.Learn.ignore_dim)
-            print("Ignored dim is {0}".format(config.Mimic.Learn.ignore_dim), file=log_file)
+            self.deg_model_name = deg_model_name
+            if deg_model_name.split('-')[0] == 'FVAE':
+                self.ignored_dim = ast.literal_eval(config.DEG.FVAE.ignore_dim)
+            elif deg_model_name.split('-')[0] == 'CVAE':
+                self.ignored_dim = ast.literal_eval(config.DEG.CVAE.ignore_dim)
+            elif deg_model_name.split('-')[0] == 'VAE':
+                self.ignored_dim = ast.literal_eval(config.DEG.CVAE.ignore_dim)
+            print("Ignored dim is {0}".format(self.ignored_dim), file=log_file)
             # initialize dientangler
-            self.dientangler = Disentanglement(config, 'FVAE' , local_test_flag, self.global_model_data_path)
-            self.dientangler.load_checkpoint(ckptname=deg_model_name, testing_flag=True, log_file=log_file)
+            # self.dientangler = Disentanglement(config, deg_model_name.split('-')[0] , local_test_flag, self.global_model_data_path)
+            # self.dientangler.load_checkpoint(ckptname=deg_model_name, testing_flag=True, log_file=log_file)
             if len(options) > 0:
                 self.binary_max_node = options[1]
                 self.saved_model_c_puct = options[3]
@@ -71,23 +78,54 @@ class MimicLearner():
 
         self.shell_saved_model_dir = self.global_model_data_path + self.mcts_saved_dir
 
-    def mcts_static_data_loader(self, action_id, log_file, training_flag=True):
+    def static_data_loader(self, action_id, log_file, img_type, training_flag=True, run_tmp_test=False, test_id = 0):
         print("Reading from static data", file=log_file)
-
+        if run_tmp_test:
+            tmp_msg = 'tmp_'
+        else:
+            tmp_msg = ''
         self.memory = []
         cwd = os.getcwd()
-        read_training_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
-                                                                 'impact_training_latent_data_' \
-                                                                 '{0}_action_{1}.csv'.format(self.game_name, action_id)
-
-        read_testing_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
-                                                                'impact_testing_latent_data_' \
-                                                                '{0}_action_{1}.csv'.format(self.game_name, action_id)
 
         if training_flag:
-            read_data_dir = read_training_data_dir
+            if img_type == 'latent':
+                read_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                     '{3}impact_training_latent_data_' \
+                                                                     '{0}_action_{1}_{2}_expand.csv'.format(self.game_name,
+                                                                                                     action_id,
+                                                                                                     self.deg_model_name.split('-')[0],
+                                                                                                     tmp_msg)
+            else:
+                read_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                     '{2}impact_training_{3}_data_' \
+                                                                     '{0}_action_{1}.csv'.format(self.game_name,
+                                                                                                 action_id,
+                                                                                                 tmp_msg,
+                                                                                                 img_type)
+            # else:
+            #     raise ValueError("Unknown image type {0}".format(img_type))
         else:
-            read_data_dir = read_testing_data_dir
+            if img_type == 'latent':
+                read_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                    '{3}impact_testing_latent_data_' \
+                                                                    '{0}_action_{1}_{2}_iter{4}.csv'.format(self.game_name,
+                                                                                                            action_id,
+                                                                                                            self.deg_model_name.split('-')[0],
+                                                                                                            tmp_msg,
+                                                                                                            test_id)
+            else:
+                read_data_dir = cwd.replace('/interface', '') + '/LMUT_data/' \
+                                                                     '{2}impact_testing_{4}_data_' \
+                                                                     '{0}_action_{1}_iter{3}.csv'.format(self.game_name,
+                                                                                                         action_id,
+                                                                                                         tmp_msg,
+                                                                                                         test_id,
+                                                                                                         img_type)
+            # else:
+            #     raise ValueError("Unknown image type {0}".format(img_type))
+
+        print("reading data from {0}".format(read_data_dir), file=log_file)
+        # print("Testing")
         skip_line = True
         with open(read_data_dir, 'r') as csvfile:
             csv_read_line = csv.reader(csvfile)
@@ -96,9 +134,13 @@ class MimicLearner():
                     skip_line = False
                     continue
                 impact = float(row[0])
-                z0 = np.asarray([float(i) for i in row[1:]])
-                self.memory.append([z0, action_id, None, None, impact])
-
+                action_id = int(row[-2])
+                cumu_reward = float(row[-1])
+                z0 = np.asarray([float(i) for i in row[1:-2]])
+                # action_id = None
+                # cumu_reward = None
+                # z0 = np.asarray([float(i) for i in row[1:]])
+                self.memory.append([z0, action_id, cumu_reward, impact])
 
     def data_loader(self, episode_number, target, action_id):
         self.memory = []
@@ -112,28 +154,11 @@ class MimicLearner():
         print_latent_total_number = 10
         print_latent_iter = 0
 
-        def gather_data_values(action_value):
-            action_value_items = action_value.split(',')
-            action_index = int(action_value_items[0])
-            action_values_list = np.zeros([self.action_number])
-            value = 0
-            if self.game_name == 'flappybird':
-                for i in range(self.action_number):
-                    action_values_list[i] = float(action_value_items[i + 1])
-            elif self.game_name == 'Assault-v0' or self.game_name == 'SpaceInvaders-v0':
-                value = float(action_value_items[1])
-            else:
-                raise ValueError('Unknown game {0}'.format(self.game_name))
-            reward = float(action_value_items[-1])
-            if reward > 1:
-                reward = 1
-            return action_index, action_values_list, reward, value
-
         with open(self.data_save_dir + '/' + self.game_name + '/action_values.txt', 'r') as f:
             action_values = f.readlines()
 
         [action_index_t0, action_values_list_t0,
-         reward_t0, value_t0] = gather_data_values(action_values[self.iteration_number])
+         reward_t0, value_t0] = gather_data_values(action_values[self.iteration_number], self.action_number, self.game_name)
         image = Image.open('{0}/{1}/{2}/images/{1}-{3}_action{4}_{2}.png'.format(self.data_save_dir,
                                                                                  self.game_name,
                                                                                  self.image_type,
@@ -147,13 +172,15 @@ class MimicLearner():
                 z0 = self.dientangler.VAE.encode(x_t0).squeeze()[:self.z_dim]
                 z0 = z0.cpu().numpy()
         elif target == "raw" or target == 'color' or target == 'binary':
-            flatten_image_t0 = np.array(image).flatten()
+            flatten_image_t0 = np.array(image).flatten()/255.0
+            # image = np.array(image)
+            # image = image/255.0
         else:
             raise ValueError("Unknown data loader target {0}".format(target))
         data_length = self.episodic_sample_number * episode_number-self.iteration_number
         while len(self.memory) < data_length:
             [action_index_t1, action_values_list_t1,
-             reward_t1, value_t1] = gather_data_values(action_values[self.iteration_number + 1])
+             reward_t1, value_t1] = gather_data_values(action_values[self.iteration_number + 1], self.action_number, self.game_name)
             if self.game_name == 'flappybird':
                 delta = max(action_values_list_t1) - action_values_list_t0[action_index_t0] + reward_t0
             elif self.game_name == 'Assault-v0' or self.game_name == 'SpaceInvaders-v0':
@@ -181,7 +208,7 @@ class MimicLearner():
                     self.memory.append([z0, action_index_t0, reward_t0, z1, delta])
                 z0 = z1
             elif target == "raw" or target == 'color' or target == 'binary':
-                flatten_image_t1 = np.array(image).flatten()
+                flatten_image_t1 = np.array(image).flatten()/255.0
                 if action_index_t0 == action_id:
                     self.memory.append([flatten_image_t0, action_index_t0, reward_t0, flatten_image_t1, delta])
                 flatten_image_t0 = flatten_image_t1
@@ -223,13 +250,19 @@ class MimicLearner():
 
         if visualize_flag and indent_number == 0:
             state_features_all = []
+            action_all = []
+            reward_all = []
             for data_index in binary_node.state:
-                z_index = self.mimic_env.data_all[data_index][0]
-                state_features_all.append(z_index)
+                state_features_all.append(self.mimic_env.data_all[data_index][0])
+                action_all.append(self.mimic_env.data_all[data_index][1])
+                reward_all.append(self.mimic_env.data_all[data_index][2])
             state_features_all_avg = np.average(np.asarray(state_features_all), axis=0)
             z_state = build_decode_input(state_features_all_avg)
             with torch.no_grad():
-                x_recon = F.sigmoid(self.dientangler.VAE.decode(z_state.to(self.dientangler.device))).data
+                if self.deg_model_name.split('-')[0] == 'CVAE':
+                    x_recon = F.sigmoid(self.dientangler.CVAE.decode(z_state.float().to(self.dientangler.device))).data
+                else:
+                    x_recon = F.sigmoid(self.dientangler.VAE.decode(z_state.float().to(self.dientangler.device))).data
                 from torchvision.utils import save_image
                 save_image(tensor=x_recon,
                            fp="../mimic_learner/action_images_plots/img_root_image.jpg", nrow=1, pad_value=1)
@@ -272,6 +305,7 @@ class MimicLearner():
         return_value_log_all = []
         return_value_log_struct_all = []
         return_value_var_reduction_all = []
+        return_value_var_reduction_by_leaf_all = []
         mae_all = []
         rmse_all = []
         leaves_number_all = []
@@ -283,11 +317,15 @@ class MimicLearner():
             return_value_log_all.append(return_value_log)
             return_value_log_struct_all.append(return_value_log_struct)
             return_value_var_reduction_all.append(return_value_var_reduction)
+            if node_index>0:
+                return_value_var_reduction_by_leaf_all.append(float(return_value_var_reduction)/node_index)
+            else:
+                return_value_var_reduction_by_leaf_all.append(float(0))
             mae_all.append(mae)
             rmse_all.append(rmse)
             leaves_number_all.append(leaves_number)
         return return_value_log_all, return_value_log_struct_all, return_value_var_reduction_all, \
-               mae_all, rmse_all, leaves_number_all
+               return_value_var_reduction_by_leaf_all, mae_all, rmse_all, leaves_number_all
 
     def generate_prediction_results(self, init_state, init_var_list, moved_nodes, max_node, log_file,
                                     visualize_flag, feature_importance_flag):
@@ -400,33 +438,41 @@ class MimicLearner():
         leaves_number = len(state)
         return return_value_log, return_value_log_struct, return_value_var_reduction, mae, rmse, leaves_number
 
-    def test_mimic_model(self, action_id, log_file, data_type):
-        self.iteration_number = int(self.episodic_sample_number * 45) # the last 5k(/50k) is for testing
-
+    def test_mimic_model(self, action_id, log_file, data_type, disentangler_name, run_tmp_test, test_id):
+        self.iteration_number = int(self.episodic_sample_number * (45+test_id*0.1)) # the last 5k(/50k) is for testing
         if self.method == 'mcts':
-            self.mcts_static_data_loader(action_id, log_file=log_file, training_flag=False)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=False,
+                                    run_tmp_test=run_tmp_test, test_id=test_id)
             # self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
-            saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
+            saved_nodes_dir = self.get_MCTS_nodes_dir(action_id, disentangler_name)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
                  = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=False,
                                      feature_importance_flag=False)
             # return_value, mae, rmse, leaves_number = [None, None, None, None]
         elif self.method == 'cart-fvae':
-            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=False,
+                                    run_tmp_test=run_tmp_test, test_id=test_id)
+            # self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)  # divided into training, validation and testing
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             testing_data = [[], []]
             for data_index in init_state[0]:
-                data_input = self.memory[data_index][0]
-                data_output = self.memory[data_index][4]
+                data_input_row_list = []
+                for i in range(len(self.memory[data_index][0])):
+                    if i not in self.ignored_dim:
+                        data_input_row_list.append(self.memory[data_index][0][i])
+                data_input = np.asarray(data_input_row_list)
+                # data_input = self.memory[data_index][0]
+                data_output = self.memory[data_index][3]
                 testing_data[0].append(data_input)
                 testing_data[1].append(data_output)
             testing_data[0] = np.stack(testing_data[0], axis=0)
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
-                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                           '{0}/{1}-aid{2}-sklearn-{3}.model'.format(self.game_name,
                                                                                                  self.method,
-                                                                                                 action_id)
+                                                                                                 action_id,
+                                                                                                     disentangler_name)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
                  = self.mimic_model.test_mimic(testing_data=testing_data,
@@ -434,20 +480,23 @@ class MimicLearner():
                                                mimic_env=self.mimic_env,
                                                log_file=log_file)
         elif self.method == 'cart':
-            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=False,
+                                    run_tmp_test=run_tmp_test, test_id=test_id)
+            # self.data_loader(episode_number=45.5+test_id*0.1, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             testing_data = [[], []]
             for data_index in init_state[0]:
                 data_input = self.memory[data_index][0]
-                data_output = self.memory[data_index][4]
+                data_output = self.memory[data_index][3]
                 testing_data[0].append(data_input)
                 testing_data[1].append(data_output)
             testing_data[0] = np.stack(testing_data[0], axis=0)
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
-                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                           '{0}/{1}-aid{2}-sklearn-{3}.model'.format(self.game_name,
                                                                                                  self.method,
-                                                                                                 action_id)
+                                                                                                 action_id,
+                                                                                                     disentangler_name)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
                  =  self.mimic_model.test_mimic(testing_data=testing_data,
@@ -456,16 +505,18 @@ class MimicLearner():
                                                 log_file=log_file)
         elif self.method == 'm5-rt' or self.method == 'm5-mt':
             from mimic_learner.comparsion_learners.m5 import generate_weka_training_data
-            self.data_loader(episode_number=45.5, target=data_type, action_id=action_id)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=False,
+                                    run_tmp_test=run_tmp_test, test_id=test_id)
+            # self.data_loader(episode_number=45.5+test_id*0.1, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
-            data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-aid{0}-tree-testing.csv'.format(action_id)
+            data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-aid{0}-tree-testing-iter{1}.csv'.format(action_id, test_id)
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/M5/' \
                                                            '{0}/{1}-aid{2}-weka.model'.format(self.game_name,
                                                                                               self.method,
                                                                                               action_id)
-            if not os.path.exists(data_dir):
-                generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
+            # if not os.path.exists(data_dir):
+            generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number = self.mimic_model.test_weka_model(testing_data_dir=data_dir,
                                                                                      save_model_dir=save_model_dir,
@@ -493,95 +544,125 @@ class MimicLearner():
                return_value_var_reduction, mae, rmse, leaves_number, results_str
 
 
-    def get_MCTS_nodes_dir(self, action_id):
+    def get_MCTS_nodes_dir(self, action_id, disentangler_name):
 
         if self.game_name == 'flappybird' and action_id == 0:
-            if self.saved_model_c_puct == 0.01 and self.play_number == 1000:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_2020-04-30/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 1  and self.play_number == 1000:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_2020-07-01/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.05  and self.play_number == 1000:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_2020-07-10/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.02  and self.play_number == 1000:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  'saved_nodes_action{1}_CPUCT0_02_2020-07-13/'.format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.05 and self.play_number == 250:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  'saved_nodes_action{1}_CPUCT0_05_2020-07-20/'.format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0 and self.play_number == 2:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  'saved_nodes_action{1}_CPUCT0_2020-07-22/'.format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.01 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  'saved_nodes_action{1}_CPUCT0_01_2020-07-25/'.format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 0.1 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  'saved_nodes_action{1}_CPUCT0_1_2020-07-27/'.format(self.game_name, action_id)
-            else:
-                raise ValueError("Unknown save model")
+            if disentangler_name == 'FVAE':
+                if self.saved_model_c_puct == 0.01 and self.play_number == 1000:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_2020-04-30/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 1  and self.play_number == 1000:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_2020-07-01/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.05  and self.play_number == 1000:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_2020-07-10/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.02  and self.play_number == 1000:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_02_2020-07-13/'.format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.05 and self.play_number == 250:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_05_2020-07-20/'.format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0 and self.play_number == 2:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_2020-07-22/'.format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_01_2020-07-25/'.format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.1 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_1_2020-07-27/'.format(self.game_name, action_id)
+                else:
+                    raise ValueError("Unknown save model")
+            elif disentangler_name == 'CVAE':
+                if self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_01_DEGCVAE_2020-11-11/'.format(self.game_name,
+                                                                                                   action_id)
+                elif self.saved_model_c_puct == 0.005 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_005_DEGCVAE_2020-11-16/'.format(self.game_name,
+                                                                                                   action_id)
+                elif self.saved_model_c_puct == 0.1 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      'saved_nodes_action{1}_CPUCT0_1_DEGCVAE_2020-11-22/'.format(self.game_name,
+                                                                                                   action_id)
+                else:
+                    raise ValueError("Unknown save model")
         elif self.game_name == 'SpaceInvaders-v0' and action_id == 4:
-            if self.saved_model_c_puct == 0.001 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_001_2020-08-03/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0.005 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_005_2020-08-13/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0.01 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_01_2020-08-14/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0 and self.play_number == 2:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_0_2020-08-10/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0.0005 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_0005_2020-08-11/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0.003 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_003_2020-08-13/".format(self.game_name, action_id)
-            if self.saved_model_c_puct == 0.008 and self.play_number == 200:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_CPUCT0_008_2020-08-14/".format(self.game_name, action_id)
-        elif self.game_name == 'flappybird' and action_id == 1:
-            if self.saved_model_c_puct == 0.01:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_2020-06-09/".format(self.game_name, action_id)
-            elif self.saved_model_c_puct == 1.5:
-                saved_nodes_dir = self.global_model_data_path + \
-                                  "/DRL-interpreter-model/MCTS/{0}/" \
-                                  "saved_nodes_action{1}_2020-06-24/".format(self.game_name, action_id)
-            else:
-                raise ValueError("Unknown save model")
+            if disentangler_name == 'FVAE':
+                if self.saved_model_c_puct == 0.001 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_001_2020-08-03/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.005 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_005_2020-08-13/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_01_2020-08-14/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0 and self.play_number == 2:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_0_2020-08-10/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.0005 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_0005_2020-08-24/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.003 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_003_2020-08-31/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.008 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_008_2020-08-14/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.015 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_015_2020-08-15/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.0001 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_0001_2020-08-25/".format(self.game_name, action_id)
+            elif disentangler_name == 'CVAE':
+                if self.saved_model_c_puct == 0.01 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_01_DEGCVAE_2020-11-27/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.05 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_05_DEGCVAE_2020-12-04/".format(self.game_name, action_id)
+                elif self.saved_model_c_puct == 0.1 and self.play_number == 200:
+                    saved_nodes_dir = self.global_model_data_path + \
+                                      "/DRL-interpreter-model/MCTS/{0}/" \
+                                      "saved_nodes_action{1}_CPUCT0_1_DEGCVAE_2020-12-09/".format(self.game_name, action_id)
         else:
             raise ValueError('Unknown MCTS dir')
 
         return saved_nodes_dir
 
-    def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type,
-                          run_mcts=False, c_puct=None, play=None):
+    def train_mimic_model(self, action_id, shell_round_number, log_file, launch_time, data_type, disentangler_name,
+                          run_mcts=False, c_puct=None, play=None, run_tmp_test=False):
         # mcts_file_name = None
         return_value_log = None
         if self.method == 'mcts':
             # self.data_loader(episode_number=4, target=data_type, action_id=action_id)
-            self.mcts_static_data_loader(action_id, log_file=log_file, training_flag=True)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=True)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             if run_mcts:
@@ -602,29 +683,37 @@ class MimicLearner():
                                        shell_round_number= shell_round_number,
                                        shell_saved_model_dir = shell_saved_model_dir,
                                        log_file = log_file,
+                                       disentangler_name=disentangler_name,
                                        apply_split_parallel=True,
                                        play=play)
                 return_value, mae, rmse, leaves_number = [None, None, None, None]
             else:
-                saved_nodes_dir = self.get_MCTS_nodes_dir(action_id)
+                saved_nodes_dir = self.get_MCTS_nodes_dir(action_id, disentangler_name)
                 return_value_log, return_value_log_struct, \
                 return_value_var_reduction, mae, rmse, leaves_number \
                     = self.predict_mcts(self.memory, action_id, saved_nodes_dir, log_file, visualize_flag=True,
                                         feature_importance_flag=True)
         elif self.method == 'cart-fvae':
-            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            # self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=True, run_tmp_test=run_tmp_test)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             training_data = [[],[]]
             for data_index in init_state[0]:
-                data_input = np.concatenate([self.memory[data_index][0]],axis=0)
-                data_output = self.memory[data_index][4]
+                data_input_row_list = []
+                for i in range(len(self.memory[data_index][0])):
+                    if i not in self.ignored_dim:
+                        data_input_row_list.append(self.memory[data_index][0][i])
+                data_input = np.asarray(data_input_row_list)
+                # data_input = np.concatenate([self.memory[data_index][0]],axis=0)
+                data_output = self.memory[data_index][3]
                 training_data[0].append(data_input)
                 training_data[1].append(data_output)
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
-                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                           '{0}/{1}-aid{2}-sklearn-{3}.model'.format(self.game_name,
                                                                                                  self.method,
-                                                                                                 action_id)
+                                                                                                 action_id,
+                                                                                                     disentangler_name)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
                 = self.mimic_model.train_mimic(training_data=training_data,
@@ -632,21 +721,23 @@ class MimicLearner():
                                                mimic_env = self.mimic_env,
                                                log_file=log_file)
         elif self.method == 'cart':
-            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=True)
+            # self.data_loader(episode_number=4, target=data_type, action_id=action_id)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             training_data = [[], []]
             for data_index in init_state[0]:
                 data_input = self.memory[data_index][0]
-                data_output = self.memory[data_index][4]
+                data_output = self.memory[data_index][3]
                 training_data[0].append(data_input)
                 training_data[1].append(data_output)
             training_data[0] = np.stack(training_data[0], axis=0)
             # cart.train_2d_tree()
             save_model_dir = self.global_model_data_path + '/DRL-interpreter-model/comparison/cart/' \
-                                                           '{0}/{1}-aid{2}-sklearn.model'.format(self.game_name,
+                                                           '{0}/{1}-aid{2}-sklearn-{3}.model'.format(self.game_name,
                                                                                                  self.method,
-                                                                                                 action_id)
+                                                                                                 action_id,
+                                                                                                     disentangler_name)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number \
                 = self.mimic_model.train_mimic(training_data=training_data,
@@ -656,7 +747,8 @@ class MimicLearner():
 
         elif self.method == 'm5-rt' or self.method == 'm5-mt':
             from mimic_learner.comparsion_learners.m5 import generate_weka_training_data
-            self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            # self.data_loader(episode_number=4, target=data_type, action_id=action_id)
+            self.static_data_loader(action_id, img_type=data_type, log_file=log_file, training_flag=True)
             self.mimic_env.assign_data(self.memory)
             init_state, init_var_list = self.mimic_env.initial_state(action=action_id)
             data_dir = self.data_save_dir + '/' + self.game_name + '/m5-weka/m5-aid{0}-tree-training.csv'.format(action_id)
@@ -664,9 +756,9 @@ class MimicLearner():
                                                            '{0}/{1}-aid{2}-weka.model'.format(self.game_name,
                                                                                               self.method,
                                                                                               action_id)
-            "/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data/Assault-v0/m5-weka"
-            if not os.path.exists(data_dir):
-                generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
+
+            # if not os.path.exists(data_dir):
+            generate_weka_training_data(data=self.memory, action_id=action_id, dir=data_dir)
             return_value_log, return_value_log_struct, \
             return_value_var_reduction, mae, rmse, leaves_number = self.mimic_model.train_weka_model(training_data_dir=data_dir,
                                                                                       save_model_dir=save_model_dir,

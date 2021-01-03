@@ -9,8 +9,10 @@ import torch.nn.functional as F
 from torchvision.utils import make_grid, save_image
 
 from utils.general_utils import DataGather, mkdirs, grid2gif, return_data
-from utils.model_utils import recon_loss, kl_divergence, permute_dims, compute_latent_importance, calc_gradient_penalty
-from data_disentanglement.nn_deg.fvae_model import FactorVAE1, FactorVAE2, Discriminator
+from utils.model_utils import recon_loss, kl_divergence, permute_dims, compute_latent_importance, calc_gradient_penalty, \
+    prediction_loss
+from data_disentanglement.nn_deg.fvae_model import FactorVAE2, Discriminator
+from data_disentanglement.nn_deg.cvae_model import ConditionalFactorVAE2, ConditionalFactorVAE3
 from data_disentanglement.nn_deg.aae_model import AAEGenerator, AAEDiscriminator, AAEEncoder
 
 
@@ -30,7 +32,8 @@ class Disentanglement(object):
 
         # Data
         self.batch_size = config.DEG.Learn.batch_size
-        self.data_loader = return_data(config.DEG.Learn, global_model_data_path)
+        self.data_loader = return_data(config.DEG.Learn, global_model_data_path, config.DRL.Learn.actions)
+        self.action_size = config.DRL.Learn.actions
 
         # Dimension
         self.z_dim = config.DEG.Learn.z_dim
@@ -38,7 +41,38 @@ class Disentanglement(object):
         self.image_width = config.DEG.Learn.image_width
 
         self.nc = 3
-        if deg_type == 'FVAE':
+        if deg_type == 'CVAE':
+            self.gamma = config.DEG.CVAE.gamma
+            if self.name == 'icehockey':
+                self.CVAE = ConditionalFactorVAE3(env_name=self.name, state_size=config.DRL.Learn.state_size,
+                                                  action_size=config.DRL.Learn.action_size,
+                                                  reward_size=config.DRL.Learn.reward_size,
+                                                  z_dim=self.z_dim).to(self.device)
+            else:
+                self.CVAE = ConditionalFactorVAE2(env_name=self.name, z_dim=self.z_dim).to(self.device)
+
+            self.optim_CVAE = optim.Adam(self.CVAE.parameters(), lr=config.DEG.CVAE.lr_VAE,
+                                        betas=(config.DEG.CVAE.beta1_VAE, config.DEG.CVAE.beta2_VAE))
+            self.fvaeD = Discriminator(self.z_dim).to(self.device)
+            self.optim_D = optim.Adam(self.fvaeD.parameters(), lr=config.DEG.CVAE.lr_D,
+                                      betas=(config.DEG.CVAE.beta1_D, config.DEG.CVAE.beta2_D))
+            self.nets = [self.CVAE, self.fvaeD]
+
+            # Checkpoint
+            self.ckpt_dir = os.path.join(self.global_model_data_path +config.DEG.CVAE.ckpt_dir, 'saved_model')
+            self.ckpt_save_iter = config.DEG.CVAE.ckpt_save_iter
+            if not local_test_flag:
+                mkdirs(self.ckpt_dir)
+            # if config.DEG.FVAE.ckpt_load:
+            #     self.load_checkpoint(config.DEG.FVAE.ckpt_load)
+
+            # Output(latent traverse GIF)
+            self.output_dir = os.path.join(self.global_model_data_path+config.DEG.CVAE.output_dir, 'output')
+            self.output_save = config.DEG.CVAE.output_save
+            self.viz_ta_iter = config.DEG.CVAE.viz_ta_iter
+            if not local_test_flag:
+                mkdirs(self.output_dir)
+        elif deg_type == 'FVAE':
             self.gamma = config.DEG.FVAE.gamma
             # self.lr_VAE = config.DEG.FVAE.lr_VAE
             # self.beta1_VAE = config.DEG.FVAE.beta1_VAE
@@ -69,7 +103,28 @@ class Disentanglement(object):
             self.viz_ta_iter = config.DEG.FVAE.viz_ta_iter
             if not local_test_flag:
                 mkdirs(self.output_dir)
+        elif deg_type == 'VAE':
+            self.gamma = config.DEG.VAE.gamma
+            self.VAE = FactorVAE2(env_name=self.name, z_dim=self.z_dim).to(self.device)
+            self.optim_VAE = optim.Adam(self.VAE.parameters(), lr=config.DEG.VAE.lr_VAE,
+                                        betas=(config.DEG.VAE.beta1_VAE, config.DEG.VAE.beta2_VAE))
 
+            self.nets = [self.VAE]
+
+            # Checkpoint
+            self.ckpt_dir = os.path.join(self.global_model_data_path +config.DEG.VAE.ckpt_dir, 'saved_model')
+            self.ckpt_save_iter = config.DEG.VAE.ckpt_save_iter
+            if not local_test_flag:
+                mkdirs(self.ckpt_dir)
+            # if config.DEG.FVAE.ckpt_load:
+            #     self.load_checkpoint(config.DEG.FVAE.ckpt_load)
+
+            # Output(latent traverse GIF)
+            self.output_dir = os.path.join(self.global_model_data_path+config.DEG.VAE.output_dir, 'output')
+            self.output_save = config.DEG.VAE.output_save
+            self.viz_ta_iter = config.DEG.VAE.viz_ta_iter
+            if not local_test_flag:
+                mkdirs(self.output_dir)
         elif deg_type == 'AAE':
             self.aeGnet= AAEGenerator(self.z_dim).to(self.device)
             self.aeDnet = AAEDiscriminator(self.z_dim).to(self.device)
@@ -118,7 +173,7 @@ class Disentanglement(object):
 
         out = False
         while not out:
-            for x_true1, x_true2 in self.data_loader:
+            for x_true1, cond1, x_true2, cond2 in self.data_loader:
                 """ reconstruction loss"""
                 real_data_v = torch.autograd.Variable(x_true1).to(self.device)
                 real_data_resized_v = real_data_v.view(self.batch_size, -1)
@@ -169,67 +224,167 @@ class Disentanglement(object):
 
 
 
-    def train_fave(self):
-        from tqdm import tqdm
+    def train_cvae(self):
+        # from tqdm import tqdm
         self.net_mode(train=True)
 
         ones = torch.ones(self.batch_size, dtype=torch.long, device=self.device)
         zeros = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
-        self.pbar = tqdm(total=self.max_iter)
+        # self.pbar = tqdm(total=self.max_iter)
         out = False
         while not out:
-            for x_true1, x_true2 in self.data_loader:
-                self.pbar.update(1)
-                x_true1 = x_true1.to(self.device)
-                x_recon, mu, logvar, z = self.VAE(x_true1)
-                vae_recon_loss = recon_loss(x_true1, x_recon)
-                vae_kld = kl_divergence(mu, logvar)
+            for x_true1, cond_y_1, x_true2, cond_y_2 in self.data_loader:
+                x_true1 = torch.squeeze(x_true1, 0).to(self.device).float()
+                cond1 = torch.squeeze(cond_y_1[:,:self.action_size+1], 0).to(self.device).float()
+                y_true1 = torch.squeeze(cond_y_1[:, -1], 0).to(self.device).float()
 
-                D_z = self.fvaeD(z)
+                x_true2 = torch.squeeze(x_true2, 0).to(self.device).float()
+                cond2 = torch.squeeze(cond_y_2[:,:self.action_size+1], 0).to(self.device).float()
+                y_true2 = torch.squeeze(cond_y_2[:, -1], 0).to(self.device).float()
+
+                # self.pbar.update(1)
+                x_recon, mu_q, logvar_q, z_q, mu_p, logvar_p, z_p, y_predict = self.CVAE(x_true1, cond1)
+                if self.name == 'icehockey':
+                    vae_recon_loss = recon_loss(x_true1, x_recon, if_cross_entropy=False)
+                else:
+                    vae_recon_loss = recon_loss(x_true1, x_recon, if_cross_entropy=True)
+
+                cvae_kld = kl_divergence(mu_q, logvar_q, mu_p, logvar_p)
+                vae_kld = kl_divergence( mu_p, logvar_p)
+                # vae_kld = kl_divergence(mu_q, logvar_q)
+
+                p_loss = 100*prediction_loss(y_predict, y_true1)
+                # p_loss = 0
+                # print(x_recon)
+
+                D_z = self.fvaeD(z_q)
                 vae_tc_loss = (D_z[:, :1] - D_z[:, 1:]).mean()
-
                 ones_z = torch.ones([self.batch_size, self.z_dim], dtype=torch.long, device=self.device)
-                vae_var_loss = torch.abs(torch.squeeze(logvar.exp())-ones_z).mean()
+                vae_var_loss = torch.abs(torch.squeeze(logvar_q.exp())-ones_z).mean()
 
-                vae_loss = vae_recon_loss + vae_kld + self.gamma * vae_tc_loss + (self.gamma/100)*vae_var_loss
+                # vae_tc_loss = torch.zeros([1])
+                # vae_var_loss = torch.zeros([1])
 
-                self.optim_VAE.zero_grad()
+                vae_loss = vae_recon_loss + cvae_kld + vae_kld + p_loss + self.gamma * vae_tc_loss
+                           # + (self.gamma/100)*vae_var_loss
+                # vae_loss = vae_recon_loss
+
+                self.optim_CVAE.zero_grad()
                 vae_loss.backward(retain_graph=True)
-                self.optim_VAE.step()
+                self.optim_CVAE.step()
 
+                # D_tc_loss = torch.zeros([1])
                 x_true2 = x_true2.to(self.device)
-                z_prime = self.VAE(x_true2, no_dec=True)
+                z_prime = self.CVAE(x_true2, cond2, no_dec=True)
                 z_pperm = permute_dims(z_prime).detach()
                 D_z_pperm = self.fvaeD(z_pperm)
                 D_tc_loss = 0.5 * (F.cross_entropy(D_z, zeros) + F.cross_entropy(D_z_pperm, ones))
-
+                #
                 self.optim_D.zero_grad()
                 D_tc_loss.backward()
                 self.optim_D.step()
 
                 if self.global_iter % self.print_iter == 0:
-                    self.pbar.write(
-                        '[{}] vae_recon_loss:{:.3f} vae_kld:{:.3f} vae_tc_loss:{:.3f} D_tc_loss:{:.3f}'.format(
-                            self.global_iter, vae_recon_loss.item(), vae_kld.item(), vae_tc_loss.item(),
-                            D_tc_loss.item()))
+                    print(
+                        '[{}] vae_recon_loss:{:.3f}, cvae_kld:{:.3f}, vae_kld:{:.3f}, vae_tc_loss:{:.3f}, D_tc_loss:{:.3f}, '
+                        'Predict_loss:{:.3f}'.format(self.global_iter, vae_recon_loss.item(), cvae_kld.item(), vae_kld.item(),
+                                                     vae_tc_loss.item(), D_tc_loss.item(), p_loss))
 
                 if self.global_iter % self.ckpt_save_iter == 0:
                     print('Saving VAE models')
-                    self.save_checkpoint('FVAE-' + str(self.global_iter), type='FVAE', verbose=True)
+                    self.save_checkpoint('CVAE-' + str(self.global_iter), type='CVAE', verbose=True)
 
-                if self.global_iter % self.viz_ta_iter == 0:
-                    with torch.no_grad():
-                        self.visualize_traverse(image_length=self.image_length,
-                                                image_width=self.image_width,
-                                                model_name='FVAE')
+                # if self.global_iter % self.viz_ta_iter == 0:
+                #     with torch.no_grad():
+                #         self.visualize_traverse(image_length=self.image_length,
+                #                                 image_width=self.image_width,
+                #                                 model_name='CVAE')
 
                 if self.global_iter >= self.max_iter:
                     out = True
                     break
                 self.global_iter += 1
 
-        self.pbar.write("[Training Finished]")
-        self.pbar.close()
+        # self.pbar.write("[Training Finished]")
+        # self.pbar.close()
+
+
+    def train_fvae(self, apply_tc=True):
+        # from tqdm import tqdm
+        self.net_mode(train=True)
+
+        ones = torch.ones(self.batch_size, dtype=torch.long, device=self.device)
+        zeros = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
+        # self.pbar = tqdm(total=self.max_iter)
+        out = False
+        while not out:
+            for x_true1, cond1, x_true2, cond2 in self.data_loader:
+                # self.pbar.update(1)
+                x_true1 = x_true1.to(self.device)
+                x_recon, mu, logvar, z = self.VAE(x_true1)
+                vae_recon_loss = recon_loss(x_true1, x_recon)
+                vae_kld = kl_divergence(mu, logvar)
+                if apply_tc:
+                    D_z = self.fvaeD(z)
+                    vae_tc_loss = (D_z[:, :1] - D_z[:, 1:]).mean()
+
+                    ones_z = torch.ones([self.batch_size, self.z_dim], dtype=torch.long, device=self.device)
+                    vae_var_loss = torch.abs(torch.squeeze(logvar.exp())-ones_z).mean()
+
+                    vae_loss = vae_recon_loss + vae_kld + self.gamma * vae_tc_loss + (self.gamma/100)*vae_var_loss
+
+                    self.optim_VAE.zero_grad()
+                    vae_loss.backward(retain_graph=True)
+                    self.optim_VAE.step()
+
+                    x_true2 = x_true2.to(self.device)
+                    z_prime = self.VAE(x_true2, no_dec=True)
+                    z_pperm = permute_dims(z_prime).detach()
+                    D_z_pperm = self.fvaeD(z_pperm)
+                    D_tc_loss = 0.5 * (F.cross_entropy(D_z, zeros) + F.cross_entropy(D_z_pperm, ones))
+
+                    self.optim_D.zero_grad()
+                    D_tc_loss.backward()
+                    self.optim_D.step()
+
+                    if self.global_iter % self.print_iter == 0:
+                        print(
+                            '[{}] vae_recon_loss:{:.3f} vae_kld:{:.3f} vae_tc_loss:{:.3f} D_tc_loss:{:.3f}'.format(
+                                self.global_iter, vae_recon_loss.item(), vae_kld.item(), vae_tc_loss.item(),
+                                D_tc_loss.item()))
+
+                    if self.global_iter % self.ckpt_save_iter == 0:
+                        print('Saving VAE models')
+                        self.save_checkpoint('FVAE-' + str(self.global_iter), type='FVAE', verbose=True)
+
+                    if self.global_iter % self.viz_ta_iter == 0:
+                        with torch.no_grad():
+                            self.visualize_traverse(image_length=self.image_length,
+                                                    image_width=self.image_width,
+                                                    model_name='FVAE')
+                else:
+                    vae_loss = vae_recon_loss + vae_kld
+
+                    self.optim_VAE.zero_grad()
+                    vae_loss.backward(retain_graph=True)
+                    self.optim_VAE.step()
+
+                    if self.global_iter % self.print_iter == 0:
+                        print(
+                            '[{}] vae_recon_loss:{:.3f} vae_kld:{:.3f}'.format(
+                                self.global_iter, vae_recon_loss.item(), vae_kld.item()))
+
+                    if self.global_iter % self.ckpt_save_iter == 0:
+                        print('Saving VAE models')
+                        self.save_checkpoint('VAE-' + str(self.global_iter), type='VAE', verbose=True)
+
+                if self.global_iter >= self.max_iter:
+                    out = True
+                    break
+                self.global_iter += 1
+
+        # self.pbar.write("[Training Finished]")
+        # self.pbar.close()
 
 
     def test(self, model_name, testing_output_dir):
@@ -244,10 +399,17 @@ class Disentanglement(object):
                            image_length, image_width, inter_number=10,
                            testing_output_dir=None, model_name=None):
         self.net_mode(train=False)
-        if 'VAE' in model_name:
+        if model_name.split('-')[0]=='CVAE':
+            s_encoder = self.CVAE.state_encoder
+            c_encoder = self.CVAE.condition_encoder
+            q_encoder = self.CVAE.conditional_q_nn
+            decoder = self.CVAE.decode
+            # encode = torch.cat((self.state_encoder(x).squeeze(), self.condition_encoder(condition)), 1)
+            # stats_q = self.conditional_q_nn(encode)
+        elif model_name.split('-')[0]=='FVAE':
             decoder = self.VAE.decode
             encoder = self.VAE.encode
-        elif 'AAE' in model_name:
+        elif model_name.split('-')[0]=='AAE':
             decoder = self.aeGnet
             encoder = self.aeEnet
         else:
@@ -257,8 +419,13 @@ class Disentanglement(object):
         total_checking_number = 1000
         for data in self.data_loader:
             input_images = data[0].to(self.device)
+            input_conditions = data[1][:,:-1].to(self.device)
             # tmp = input_images.cpu().numpy()
-            z_output = encoder(input_images)[:, :self.z_dim]
+            if model_name.split('-')[0]=='CVAE':
+                encode_cat = torch.cat((s_encoder(input_images).squeeze(), c_encoder(input_conditions)), 1)
+                z_output = q_encoder(encode_cat)[:, :self.z_dim].unsqueeze(-1).unsqueeze(-1)
+            else:
+                z_output = encoder(input_images)[:, :self.z_dim]
             if z_checked_all is None:
                 z_checked_all = z_output
             else:
@@ -266,6 +433,8 @@ class Disentanglement(object):
             # tmp = z_checked_all.size()[0]
             if z_checked_all.size()[0] > total_checking_number:
                 break
+        avg_img_z = torch.mean(z_checked_all, 0, keepdim=True)
+
         dim_minmax_tuple_list = []
         dim_interpolation_list = []
         for k in range(self.z_dim):
@@ -277,19 +446,29 @@ class Disentanglement(object):
             interpolation = torch.arange(dim_min, dim_max, float(dim_max-dim_min)/inter_number)
             dim_interpolation_list.append(interpolation)
 
-        random_img = self.data_loader.dataset.__getitem__(0)[1]
+        random_img = self.data_loader.dataset.__getitem__(0)[2]
+        random_conds = self.data_loader.dataset.__getitem__(0)[3][:-1]
         random_img = random_img.to(self.device).unsqueeze(0)
-        random_img_z = encoder(random_img)[:, :self.z_dim]
+        random_conds = random_conds.to(self.device).unsqueeze(0)
 
         # if self.name == 'flappybird':
         fixed_idx = 111
         fixed_img = self.data_loader.dataset.__getitem__(fixed_idx)[0]
-
+        fixed_conds = self.data_loader.dataset.__getitem__(fixed_idx)[1][:-1]
         fixed_img = fixed_img.to(self.device).unsqueeze(0)
-        fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
-        random_z = torch.rand(1, self.z_dim, 1, 1, device=self.device)
+        fixed_conds = fixed_conds.to(self.device).unsqueeze(0)
+        # random_z = torch.rand(1, self.z_dim, 1, 1, device=self.device)
 
-        Z = {'fixed_img': fixed_img_z, 'random_img': random_img_z}
+        if model_name.split('-')[0] == 'CVAE':
+            random_encode_cat = torch.cat((s_encoder(random_img).squeeze(-1).squeeze(-1), c_encoder(random_conds)), 1)
+            random_img_z = q_encoder(random_encode_cat)[:, :self.z_dim].unsqueeze(-1).unsqueeze(-1)
+            fixed_encode_cat = torch.cat((s_encoder(fixed_img).squeeze(-1).squeeze(-1), c_encoder(fixed_conds)), 1)
+            fixed_img_z = q_encoder(fixed_encode_cat)[:, :self.z_dim].unsqueeze(-1).unsqueeze(-1)
+        else:
+            random_img_z = encoder(random_img)[:, :self.z_dim]
+            fixed_img_z = encoder(fixed_img)[:, :self.z_dim]
+
+        Z = {'fixed_img': fixed_img_z, 'random_img': random_img_z, 'avg_img':avg_img_z}
 
         gifs = []
         for key in Z:
@@ -355,6 +534,13 @@ class Disentanglement(object):
             states = {'iter': self.global_iter,
                       'model_states': model_states,
                       'optim_states': optim_states}
+        elif type == "VAE":
+            model_states = {'VAE': self.VAE.state_dict()}
+            optim_states = {'optim_VAE': self.optim_VAE.state_dict()}
+            states = {'iter': self.global_iter,
+                      'model_states': model_states,
+                      'optim_states': optim_states}
+
         elif type == "AAE":
             model_states = {'aeEnet':self.aeEnet.state_dict(),
                             'aeGnet':self.aeGnet.state_dict(),
@@ -362,6 +548,14 @@ class Disentanglement(object):
             optim_states = {'optim_E':self.optim_E.state_dict(),
                             'optim_G':self.optim_G.state_dict(),
                             'optim_D':self.optim_D.state_dict()}
+            states = {'iter': self.global_iter,
+                      'model_states': model_states,
+                      'optim_states': optim_states}
+        elif type == "CVAE":
+            model_states = {'D': self.fvaeD.state_dict(),
+                            'CVAE': self.CVAE.state_dict()}
+            optim_states = {'optim_D': self.optim_D.state_dict(),
+                            'optim_CVAE': self.optim_CVAE.state_dict()}
             states = {'iter': self.global_iter,
                       'model_states': model_states,
                       'optim_states': optim_states}
@@ -376,18 +570,18 @@ class Disentanglement(object):
             # self.pbar.write("=> saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
             print("saved checkpoint '{}' (iter {})".format(filepath, self.global_iter))
 
-    def load_checkpoint(self, ckptname='last', verbose=True, testing_flag=False, log_file=None):
+    def load_checkpoint(self, ckptname, verbose=True, testing_flag=False, log_file=None):
 
-        if ckptname == 'last':
-            ckpts = os.listdir(self.ckpt_dir)
-            if not ckpts:
-                if verbose:
-                    self.pbar.write("=> no checkpoint found")
-                return
-
-            ckpts = [int(ckpt.split('-')[1]) for ckpt in ckpts]
-            ckpts.sort(reverse=True)
-            ckptname = 'FVAE-' + str(ckpts[0])
+        # if ckptname == 'last':
+        #     ckpts = os.listdir(self.ckpt_dir)
+        #     if not ckpts:
+        #         if verbose:
+        #             self.pbar.write("=> no checkpoint found")
+        #         return
+        #
+        #     ckpts = [int(ckpt.split('-')[1]) for ckpt in ckpts]
+        #     ckpts.sort(reverse=True)
+        #     ckptname = 'FVAE-' + str(ckpts[0])
         from tqdm import tqdm
         if not testing_flag:
             self.pbar = tqdm(total=self.max_iter)
@@ -400,10 +594,21 @@ class Disentanglement(object):
                     checkpoint = torch.load(f, map_location=torch.device('cpu'))
 
             self.global_iter = checkpoint['iter']
-            self.VAE.load_state_dict(checkpoint['model_states']['VAE'])
-            self.fvaeD.load_state_dict(checkpoint['model_states']['D'])
-            self.optim_VAE.load_state_dict(checkpoint['optim_states']['optim_VAE'])
-            self.optim_D.load_state_dict(checkpoint['optim_states']['optim_D'])
+            # if ckptname.split("-")[0] == "CVAE":
+            if "CVAE" in ckptname:
+                self.CVAE.load_state_dict(checkpoint['model_states']['CVAE'])
+                self.optim_CVAE.load_state_dict(checkpoint['optim_states']['optim_CVAE'])
+                self.fvaeD.load_state_dict(checkpoint['model_states']['D'])
+                self.optim_D.load_state_dict(checkpoint['optim_states']['optim_D'])
+            # elif ckptname.split("-")[0] == "FVAE":
+            elif "FVAE" in ckptname:
+                self.VAE.load_state_dict(checkpoint['model_states']['VAE'])
+                self.optim_VAE.load_state_dict(checkpoint['optim_states']['optim_VAE'])
+                self.fvaeD.load_state_dict(checkpoint['model_states']['D'])
+                self.optim_D.load_state_dict(checkpoint['optim_states']['optim_D'])
+            else:
+                self.VAE.load_state_dict(checkpoint['model_states']['VAE'])
+                self.optim_VAE.load_state_dict(checkpoint['optim_states']['optim_VAE'])
             if not testing_flag:
                 self.pbar.update(self.global_iter)
             if verbose:

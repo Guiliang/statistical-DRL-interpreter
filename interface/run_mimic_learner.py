@@ -26,6 +26,8 @@ optparser.add_option("-c", "--cpuct", dest="C_PUCT", default=None,
                      help="cpuct")
 optparser.add_option("-p", "--play", dest="PLAY", default=None,
                      help="play number")
+optparser.add_option("-n", "--dientangler_name", dest="De_Name", default="CVAE",
+                     help="play number")
 # optparser.add_option("-d", "--dir of just saved mcts", dest="MCTS_DIR", default=None,
 #                      help="dir of just saved mcts (default = None)")
 opts = optparser.parse_args()[0]
@@ -36,8 +38,8 @@ def run():
     if opts.GAME_NAME is not None:
         game_name = opts.GAME_NAME
     else:
-        game_name = 'SpaceInvaders-v0'
-        opts.ACTION_ID=4
+        game_name = 'flappybird'
+        opts.ACTION_ID=0
         # config_game_name = 'assault_v0'
 
     if opts.METHOD_NAME is not None:
@@ -55,17 +57,19 @@ def run():
     else:
         c_puct = None
 
+    disentangler_name = opts.De_Name
+
     if game_name == 'flappybird':
-        model_name = 'FVAE-1000000'
+        model_name = '{0}-1000000'.format(disentangler_name)
         config_game_name = 'flappybird'
     elif game_name == 'SpaceInvaders-v0':
-        model_name = 'FVAE-1000000'
+        model_name = '{0}-1000000'.format(disentangler_name)
         config_game_name = "space_invaders_v0"
     elif game_name == 'Assault-v0':
-        model_name = 'FVAE-1000000'
+        model_name = '{0}-1000000'.format(disentangler_name)
         config_game_name = 'assault_v0'
     elif game_name == 'Breakout-v0':
-        model_name = 'FVAE-1000000'
+        model_name = '{0}-1000000'.format(disentangler_name)
         config_game_name = 'breakout_v0'
     else:
         raise ValueError("Unknown game name {0}".format(game_name))
@@ -106,7 +110,7 @@ def run():
                                      deg_model_name = model_name,
                                      local_test_flag=local_test_flag,
                                      global_model_data_path=global_model_data_path,
-                                     log_file=log_file,
+                                     log_file=log_file
                                      )
         # mimic_learner.test_mimic_model(action_id= int(opts.ACTION_ID), log_file=log_file)
         shell_round_number = int(opts.ROUND_NUMBER) if opts.ROUND_NUMBER is not None else None
@@ -115,10 +119,11 @@ def run():
                                         shell_round_number=shell_round_number,
                                         log_file=log_file,
                                         launch_time = opts.LAUNCH_TIME,
+                                        disentangler_name=disentangler_name,
                                         data_type = 'latent',
                                         run_mcts=True,
                                         c_puct=c_puct,
-                                        play=play)
+                                        play=play,)
 
         if log_file is not None:
             log_file.close()

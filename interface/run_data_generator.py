@@ -10,7 +10,7 @@ from data_generator.generator import DRLDataGenerator
 def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    game_name = 'Breakout-v0'
+    game_name = 'flappybird'
     print('Running game {0}'.format(game_name))
     if game_name == 'flappybird':
         mimic_env_config_path = "../environment_settings/" \
@@ -29,7 +29,7 @@ def run():
 
     mimic_config = DRLMimicConfig.load(mimic_env_config_path)
 
-    local_test_flag = False
+    local_test_flag = True
     if local_test_flag:
         mimic_config.DRL.Learn.data_save_path = '../example_data/flappybird/'
         mimic_config.DRL.Learn.ckpt_dir = '../data_generator/saved_models/'

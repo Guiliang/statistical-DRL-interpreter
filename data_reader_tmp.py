@@ -167,8 +167,8 @@ def write_data_text(data, writer):
 
 # do not run if called by another file
 if __name__ == '__main__':
-    game_name = 'SpaceInvaders-v0'
-    image_type = 'origin'
+    game_name = 'flappybird'
+    image_type = 'latent'
     global_model_data_path = "/Local-Scratch/oschulte/Galen"
 
     if game_name == 'flappybird':
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     dientangler = Disentanglement(mimic_config, 'FVAE', False, global_model_data_path)
     dientangler.load_checkpoint(ckptname= model_name, testing_flag=True, log_file=None)
 
-    for aid in [4]:
+    for aid in [0]:
         data_save_dir = '/Local-Scratch/oschulte/Galen/DRL-interpreter-model/data'
 
         training_data_action = data_loader(episode_number=4, action_id=aid,

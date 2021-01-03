@@ -9,7 +9,10 @@ import numpy as np
 import os
 
 cwd = os.getcwd()
-cwd = cwd.replace('interface', 'data_generator')
+if 'interface' in cwd:
+    cwd = cwd.replace('interface', 'data_generator')
+elif 'explaination_method_comparison' in cwd:
+    cwd = cwd.replace('explaination_method_comparison', 'data_generator')
 print('current working directory is {0} (this third-party wrapper looks cumbersome)'.format(cwd))
 os.chdir(cwd)
 

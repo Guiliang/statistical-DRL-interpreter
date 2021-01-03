@@ -64,6 +64,36 @@ DEG:
     ckpt_dir : '/DRL-interpreter-model/DEG/FVAE/SpaceInvaders-v0/'
     output_dir: '/DRL-interpreter-model/DEG/FVAE/SpaceInvaders-v0/'
     viz_ta_iter: 10000
+    ignore_dim: '[0, 4, 7]'  # {0: 1303, 1: 6917, 2: 8575, 3: 9694, 4: 10050, 5: 3461}
+
+  VAE:
+    gamma: 6.4
+    lr_VAE: 0.0001
+    beta1_VAE : 0.9
+    beta2_VAE : 0.999
+    ckpt_save_iter: 10000
+    ckpt_load: True
+    output_save: True
+    ckpt_dir : '/DRL-interpreter-model/DEG/VAE/SpaceInvaders-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/VAE/SpaceInvaders-v0/'
+    viz_ta_iter: 10000
+    ignore_dim: '[]'  # ignore the trivial latent values
+
+  CVAE:
+    gamma: 6.4
+    lr_VAE: 0.0001
+    beta1_VAE : 0.9
+    beta2_VAE : 0.999
+    lr_D : 0.0001
+    beta1_D : 0.5
+    beta2_D : 0.9
+    ckpt_save_iter: 10000
+    ckpt_load: True
+    output_save: True
+    ckpt_dir : '/DRL-interpreter-model/DEG/CVAE/SpaceInvaders-v0/'
+    output_dir: '/DRL-interpreter-model/DEG/CVAE/SpaceInvaders-v0/'
+    viz_ta_iter: 10000
+    ignore_dim: '[0,1,4,6,9]' # '[0,1,2,3,4,5,6,8]'
 
 Mimic:
   Learn:
@@ -73,4 +103,3 @@ Mimic:
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/SpaceInvaders-v0/saved_model'
     max_k: 10
-    ignore_dim: '[0, 4, 7]'  # {0: 1303, 1: 6917, 2: 8575, 3: 9694, 4: 10050, 5: 3461}

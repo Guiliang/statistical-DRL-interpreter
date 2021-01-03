@@ -1358,6 +1358,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
                            mcts_saved_dir, max_k, init_state,
                            init_var_list, action_id, ignored_dim,
                            shell_round_number, shell_saved_model_dir, log_file,
+                           disentangler_name,
                            apply_split_parallel=False, save_gap=2, play=None):
     pid = os.getpid()
     process = psutil.Process(pid)  # supervise the usage of memory
@@ -1410,7 +1411,7 @@ def execute_episode_single(num_simulations, TreeEnv, tree_writer,
             mcts.initialize_search(random_seed=0, init_state=init_state, init_var_list=init_var_list,
                                    n_action_types=TreeEnv.n_action_types, ignored_dim=ignored_dim)
             saved_nodes_dir = mcts_saved_dir.replace('saved_model','saved_nodes')+'_action'+str(action_id)+'_CPUCT'\
-                              +str(initial_c_puct)+'_'+datetime.today().strftime('%Y-%m-%d')
+                              +str(initial_c_puct)+'_DEG'+disentangler_name+'_'+datetime.today().strftime('%Y-%m-%d')
             mcts.saved_nodes_dir=saved_nodes_dir
             if not os.path.exists(saved_nodes_dir):
                 os.mkdir(saved_nodes_dir)

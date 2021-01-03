@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as tnf
 import torch.optim as optim
 from tensorpack import OfflinePredictor, PredictConfig, SmartInit
-
+from data_generator.fb_game.flappy_bird import FlappyBird
 from data_generator.nn_drl.dqn_fb import FlappyBirdDQN
 from data_generator.nn_drl.nn_atari import Model
 # from data_generator.train_atari import Model
@@ -50,7 +50,6 @@ class DRLDataGenerator():
             self.optim = optim.Adam(self.nn.parameters(), lr=self.config.DRL.Learn.learning_rate)
             if config.DRL.Learn.ckpt_load:
                 self.load_checkpoint(model_name='flappy_bird_model')
-            from data_generator.fb_game.flappy_bird import FlappyBird
             self.game_state = FlappyBird()
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(123)
@@ -192,10 +191,10 @@ class DRLDataGenerator():
                     readout = readout.cpu().numpy()
                     action_index = np.argmax(readout)
                     x_t1_colored, r_t, terminal = self.game_state.next_frame(action_index)
-                    store_state_action_data(img_colored=x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)],
-                                            action_values=readout[0], reward=r_t, action_index=action_index,
-                                            save_image_path=self.data_save_path, action_values_file=action_values_file,
-                                            game_name=self.game_name, iteration_number=self.global_iter)
+                    # store_state_action_data(img_colored=x_t0_colored[:self.game_state.screen_width, :int(self.game_state.base_y)],
+                    #                         action_values=readout[0], reward=r_t, action_index=action_index,
+                    #                         save_image_path=self.data_save_path, action_values_file=action_values_file,
+                    #                         game_name=self.game_name, iteration_number=self.global_iter)
                     print("finishing save data iter {0}".format(self.global_iter))
                     x_t1 = handle_image_input(x_t1_colored[:self.game_state.screen_width, :int(self.game_state.base_y)])
                     s_t1 = torch.cat((s_t0[1:, :, :], x_t1.to(self.device)))

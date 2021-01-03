@@ -15,6 +15,8 @@ class DRLMimicConfig(object):
             self.AAE = DRLMimicConfig.DEG.AAE(init["AAE"])
             self.Learn = DRLMimicConfig.DEG.Learn(init["Learn"])
             self.FVAE = DRLMimicConfig.DEG.FVAE(init["FVAE"])
+            self.CVAE = DRLMimicConfig.DEG.CVAE(init["CVAE"])
+            self.VAE = DRLMimicConfig.DEG.VAE(init["VAE"])
 
         class Learn(InitWithDict):
             batch_size = None
@@ -44,6 +46,30 @@ class DRLMimicConfig(object):
 
 
         class FVAE(InitWithDict):
+            gamma = None
+            lr_VAE = None
+            beta1_VAE = None
+            beta2_VAE = None
+            lr_D = None
+            beta1_D = None
+            beta2_D = None
+            ckpt_save_iter = None
+            output_save = None
+            gmma = None
+            ckpt_load = None
+
+        class VAE(InitWithDict):
+            gamma = None
+            lr_VAE = None
+            beta1_VAE = None
+            beta2_VAE = None
+            ckpt_save_iter = None
+            output_save = None
+            gmma = None
+            ckpt_load = None
+
+
+        class CVAE(InitWithDict):
             gamma = None
             lr_VAE = None
             beta1_VAE = None

@@ -1,39 +1,22 @@
 DRL:
   Learn:
     actions: 2  # number of valid actions
-    gamma: 0.99  # decay rate of past observations
-    observe: 100 #10000.  # timesteps to observe before training
-    explore: 2000000.  # frames over which to anneal epsilon
-    final_epsilon: 0.0001  # final value of epsilon
-    initial_epsilon: 0.9  # starting value of epsilon
-    replay_memory_size: 50000  # number of previous transitions to remember
-    batch: 32  # size of minibatch
-    frame_per_action: 5
-    learning_rate: 0.000001
-    cuda: True
-    ckpt_dir: '/DRL-interpreter-model/DRL/flappybird/'
-    ckpt_save_iter: 100
-    max_iter: 10000
-    ckpt_load: True
-    gmma: 0.99
-#    beta1_D: 0.5
-#    beta2_D: 0.9
-    input_image_size: 80
     data_save_path: '/DRL-interpreter-model/data/flappybird/'
     action_type: 'discrete'
+    state_size: 12
+    action_size: 27
+    reward_size: 1
 
 DEG:
   Learn:
-    name : 'flappybird'  # 'main'
+    name : 'icehockey'  # 'main'
     cuda : True
-    max_iter: 2000000
+    max_iter: 1000000
     batch_size: 32
-    image_length : 84
-    image_width : 84
-    print_iter : 500
+    print_iter : 100
     z_dim: 10  # 'dimension of the representation z'
     num_workers : 2
-    dset_dir: '/DRL-interpreter-model/data'
+    dset_dir: '/Ice-hockey-data/2018-2019'
     image_type: 'origin'
 
   AAE:
@@ -67,27 +50,13 @@ DEG:
     ckpt_dir : '/DRL-interpreter-model/DEG/FVAE/flappybird/'
     output_dir: '/DRL-interpreter-model/DEG/FVAE/flappybird/'
     viz_ta_iter: 10000
-    ignore_dim: '[3, 8, 9]'  # ignore the trivial latent values
 
-  VAE:
+  CVAE:
     gamma: 6.4
     lr_VAE: 0.0001
     beta1_VAE : 0.9
     beta2_VAE : 0.999
-    ckpt_save_iter: 10000
-    ckpt_load: True
-    output_save: True
-    ckpt_dir : '/DRL-interpreter-model/DEG/VAE/flappybird/'
-    output_dir: '/DRL-interpreter-model/DEG/VAE/flappybird/'
-    viz_ta_iter: 10000
-    ignore_dim: '[]'  # ignore the trivial latent values
-
-  CVAE:
-    gamma: 6.4
-    lr_VAE: 0.00001
-    beta1_VAE : 0.9
-    beta2_VAE : 0.999
-    lr_D : 0.00005
+    lr_D : 0.0001
     beta1_D : 0.5
     beta2_D : 0.9
     ckpt_save_iter: 10000
@@ -96,7 +65,6 @@ DEG:
     ckpt_dir : '/DRL-interpreter-model/DEG/CVAE/flappybird/'
     output_dir: '/DRL-interpreter-model/DEG/CVAE/flappybird/'
     viz_ta_iter: 10000
-    ignore_dim: '[9, 5, 0, 3, 7]'  # ignore the trivial latent values
 
 Mimic:
   Learn:
@@ -106,4 +74,5 @@ Mimic:
     episodic_sample_number: 1000  # the number of selected data points
     mcts_saved_dir: '/DRL-interpreter-model/MCTS/flappybird/saved_model'
     max_k: 10
+    ignore_dim: '[3, 8, 9]'
 

@@ -28,7 +28,7 @@ def plot_values_by_node(x_values_method_all, y_values_method_all, plotting_targe
     method_name_dict= {'cart-fvae': 'CART',
                        'vr-lmt-fvae': 'VR-LMT',
                        'gn-lmt-fave': 'GM-LMT',
-                       'mcts': 'MCTR'
+                       'mcts': 'MCRTS'
                        }
     method_markers_dict = {
         'cart-fvae': "o",
@@ -37,9 +37,9 @@ def plot_values_by_node(x_values_method_all, y_values_method_all, plotting_targe
         'mcts': "X"
     }
 
-    plt.figure(figsize=(8,6))
-    plt.xticks(size=15)
-    plt.yticks(size=15)
+    plt.figure(figsize=(9,6))
+    plt.xticks(size=18)
+    plt.yticks(size=18)
 
     if plotting_target == 'Variance Reduction':
         if game_name == 'SpaceInvaders-v0':
@@ -59,16 +59,16 @@ def plot_values_by_node(x_values_method_all, y_values_method_all, plotting_targe
         if game_name == 'SpaceInvaders-v0':
             y_lim = [0.20, 0.23]
             plt.ylim(y_lim)
-
+    plt.xlim([1, 30])
     for method_index in range(len(x_values_method_all)):
         plt.scatter(x_values_method_all[method_index], y_values_method_all[method_index],
                     label=method_name_dict[methods[method_index]],
                     marker=method_markers_dict[methods[method_index]],
                     s=120)
         plt.plot(x_values_method_all[method_index], y_values_method_all[method_index])
-    plt.xlabel("The Number of Leaves", fontsize=18)
-    plt.ylabel(plotting_target, fontsize=18)
-    plt.legend(fontsize=15, loc=location)
+    plt.xlabel("The Number of Leaves", fontsize=20)
+    plt.ylabel(plotting_target, fontsize=20)
+    plt.legend(fontsize=20, loc=location)
     plt.grid(linestyle='dotted')
     plt.savefig('../results/plot_results/{0}_{1}_by_node.png'.format(plotting_target, game_name))
 
